@@ -1,1 +1,1 @@
-# -Yolo-FastestV2
+# Yolo-FastestV2
