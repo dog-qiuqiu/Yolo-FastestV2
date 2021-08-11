@@ -1,4 +1,5 @@
 # :zap:Yolo-FastestV2:zap:
+* Simple, fast, compact, easy to transplant
 * Less resource occupation, excellent single-core performance, lower power consumption
 * Faster and smaller:Trade 1% loss of accuracy for 40% increase in inference speed, reducing the amount of parameters by 25%
 # Evaluating indicator/Benchmark
