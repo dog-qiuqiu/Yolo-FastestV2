@@ -102,7 +102,11 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
   ```
   python3 genanchors.py --traintxt ./train.txt
   ```
-  The sample content of the anchor bias is as follows
+* The anchors6.txt file will be generated in the current directory,the sample content of the anchors6.txt is as follows:
+  ```
+  28.78,52.28, 73.53,92.81, 79.07,192.48, 151.20,259.29, 208.42,138.11, 291.82,285.26  # anchor bias
+  0.636158                                                                             # iou
+  ```
 ### Build the training .data configuration file
 * Reference./data/coco.data
   ```
