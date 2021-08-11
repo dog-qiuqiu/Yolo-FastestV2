@@ -3,6 +3,7 @@
 * Simple, fast, compact, easy to transplant
 * Less resource occupation, excellent single-core performance, lower power consumption
 * Faster and smaller:Trade 1% loss of accuracy for 40% increase in inference speed, reducing the amount of parameters by 25%
+* Fast training speed, low computing power requirements, training only requires 3GB video memory, gtx1660ti training COCO 1 epoch only takes 7 minutes
 # Evaluating indicator/Benchmark
 Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Params(M)
 :---:|:---:|:---:|:---:|:---:|:---:|:---:
