@@ -97,3 +97,35 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
   └── val.txt                # val dataset path .txt file
 
   ```
+### Get anchor bias
+* Generate anchor based on current dataset
+  ```
+  python3 genanchors.py --traintxt ./train.txt
+  ```
+  The sample content of the anchor bias is as follows
+### Build the training .data configuration file
+* Reference./data/coco.data
+  ```
+  [name]
+  model_name=coco           # model name
+
+  [train-configure]
+  epochs=300                # train epichs
+  steps=150,250             # Declining learning rate steps
+  batch_size=64             # batch size
+  subdivisions=1            # Same as the subdivisions of the darknet cfg file
+  learning_rate=0.001       # learning rate
+
+  [model-configure]
+  pre_weights=None          # The path to load the model, if it is none, then restart the training
+  classes=80                # Number of detection categories
+  width=352                 # The width of the model input image
+  height=352                # The height of the model input image
+  anchor_num=3              # anchor num
+  anchors=12.64,19.39, 37.88,51.48, 55.71,138.31, 126.91,78.23, 131.57,214.55, 279.92,258.87 #anchor bias
+
+  [data-configure]
+  train=/media/qiuqiu/D/coco/train2017.txt   # train dataset path .txt file
+  val=/media/qiuqiu/D/coco/val2017.txt       # val dataset path .txt file 
+  names=./data/coco.names                    # .names category label file
+  ```
