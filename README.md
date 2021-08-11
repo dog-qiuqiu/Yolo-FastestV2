@@ -12,3 +12,9 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
 
 * ***Test platform Mi 11 Snapdragon 888 CPU，Based on [NCNN](https://github.com/Tencent/ncnn)***
 * Suitable for hardware with extremely tight computing resources
+# Test
+* Picture test
+```
+  python3 test.py --data data/coco.data --weights modelzoo/coco2017-epoch-0.235624ap-model.pth --img img/dog.jpg
+```
+![image](https://github.com/dog-qiuqiu/Yolo-FastestV2/blob/main/img/dog_result.png)
