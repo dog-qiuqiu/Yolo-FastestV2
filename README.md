@@ -11,6 +11,7 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
 [Yolov4-Tiny](https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4-tiny.cfg)|40.2%|416X416|23.67ms|40.14ms|6.9|5.77M
 
 * ***Test platform Mi 11 Snapdragon 888 CPU，Based on [NCNN](https://github.com/Tencent/ncnn)***
+* Reasons for the increase in inference speed: optimization of model memory access
 * Suitable for hardware with extremely tight computing resources
 # How to use
 ## Dependent installation
