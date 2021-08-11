@@ -7,5 +7,4 @@ Yolo-FastestV2|23.56 %|352X352|3.23 ms|4.5 ms|0.238|0.25M
 [Yolov4-Tiny](https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4-tiny.cfg)|40.2%|416X416|23.67ms|40.14ms|6.9|5.77M
 
 * ***Test platform Mi 11 Snapdragon 888 CPU，Based on [NCNN](https://github.com/Tencent/ncnn)***
-* COCO 2017 Val mAP（no group label）
 * Suitable for hardware with extremely tight computing resources
