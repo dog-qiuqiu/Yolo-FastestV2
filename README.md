@@ -1,4 +1,6 @@
-# Yolo-FastestV2
+# :zap:Yolo-FastestV2:zap:
+* Less resource occupation, excellent single-core performance, lower power consumption
+* Faster and smaller:Trade 1% loss of accuracy for 40% increase in inference speed, reducing the amount of parameters by 25%
 # Evaluating indicator/Benchmark
 Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Params(M)
 :---:|:---:|:---:|:---:|:---:|:---:|:---:
