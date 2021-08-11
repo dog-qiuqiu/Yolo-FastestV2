@@ -16,6 +16,7 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
 * Suitable for hardware with extremely tight computing resources
 # How to use
 ## Dependent installation
+  * PIP
   ```
   pip3 install -r requirements.txt
   ```
