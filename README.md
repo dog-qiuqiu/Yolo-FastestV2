@@ -133,3 +133,15 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
   val=/media/qiuqiu/D/coco/val2017.txt       # val dataset path .txt file 
   names=./data/coco.names                    # .names category label file
   ```
+### Train
+* Perform training tasks
+  ```
+  python3 train.py --data data/coco.data
+  ```
+### Evaluation
+* Calculate map evaluation
+  ```
+  python3 evaluation.py --data data/coco.data --weights modelzoo/coco2017-epoch-0.235624ap-model.pth
+  ```
+# Deploy
+## NCNN
