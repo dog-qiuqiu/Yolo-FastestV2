@@ -152,6 +152,10 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
   ```
 # Deploy
 ## NCNN
+* Convert onnx
+  ```
+  python3 pytorch2onnx.py --data data/coco.data --weights modelzoo/coco2017-0.241078ap-model.pth
+  ```
 # Reference
 * https://github.com/Tencent/ncnn
 * https://github.com/AlexeyAB/darknet
