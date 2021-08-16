@@ -29,7 +29,10 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
   ```
   python3 test.py --data data/coco.data --weights modelzoo/coco2017-0.241078ap-model.pth --img img/000139.png
   ```
-![image](https://github.com/dog-qiuqiu/Yolo-FastestV2/blob/main/img/000139_result.png)
+<div align=center>
+<img src="https://github.com/dog-qiuqiu/Yolo-FastestV2/blob/main/img/000139_result.png"> />
+</div>
+
 ## How to train
 ### Building data sets(The dataset is constructed in the same way as darknet yolo)
 * The format of the data set is the same as that of Darknet Yolo, Each image corresponds to a .txt label file. The label format is also based on Darknet Yolo's data set label format: "category cx cy wh", where category is the category subscript, cx, cy are the coordinates of the center point of the normalized label box, and w, h are the normalized label box The width and height, .txt label file content example as follows:
