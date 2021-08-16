@@ -1,4 +1,3 @@
-* This is Beta...
 # :zap:Yolo-FastestV2:zap:[![DOI](https://zenodo.org/badge/386585431.svg)](https://zenodo.org/badge/latestdoi/386585431)
 ![image](https://github.com/dog-qiuqiu/Yolo-FastestV2/blob/main/img/demo.png)
 * ***Simple, fast, compact, easy to transplant***
