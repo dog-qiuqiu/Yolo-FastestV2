@@ -111,7 +111,7 @@ if __name__ == '__main__':
 
             #学习率预热
             for g in optimizer.param_groups:
-                warmup_num =  10 * len(train_dataloader)
+                warmup_num =  5 * len(train_dataloader)
                 if batch_num <= warmup_num:
                     scale = math.pow(batch_num/warmup_num, 4)
                     g['lr'] = cfg["learning_rate"] * scale

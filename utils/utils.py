@@ -3,6 +3,7 @@ import time
 
 import torch
 import torchvision
+import torch.nn.functional as F
 
 import os, time
 import numpy as np
@@ -263,12 +264,8 @@ def non_max_suppression(prediction, conf_thres=0.3, iou_thres=0.45, classes=None
         box = xywh2xyxy(x[:, :4])
 
         # Detections matrix nx6 (xyxy, conf, cls)
-        if multi_label:
-            i, j = (x[:, 5:] > conf_thres).nonzero(as_tuple=False).T
-            x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)
-        else:  # best class only
-            conf, j = x[:, 5:].max(1, keepdim=True)
-            x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
+        conf, j = x[:, 5:].max(1, keepdim=True)
+        x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
 
         # Filter by class
         if classes is not None:
@@ -306,42 +303,58 @@ def make_grid(h, w, cfg, device):
 def handel_preds(preds, cfg, device):
     #加载anchor配置
     anchors = np.array(cfg["anchors"])
-    anchors = torch.from_numpy(anchors.reshape(len(preds), cfg["anchor_num"], 2)).to(device)
-    
-    output_bboxes = []
-    for i, pred in enumerate(preds):
-        bacth_bboxes = []
-        for b, p in enumerate(pred):
-            #h, w, anchor_num, box
-            p = p.permute(1, 2, 0)
-            p = p.reshape(p.shape[0], p.shape[1], cfg["anchor_num"], -1)
+    anchors = torch.from_numpy(anchors.reshape(len(preds) // 3, cfg["anchor_num"], 2)).to(device)
 
-            anchor_boxes = p.clone()
+    output_bboxes = []
+    layer_index = [0, 0, 0, 1, 1, 1]
+
+    for i in range(len(preds) // 3):
+        bacth_bboxes = []
+        reg_preds = preds[i * 3]
+        obj_preds = preds[(i * 3) + 1]
+        cls_preds = preds[(i * 3) + 2]
+
+        for r, o, c in zip(reg_preds, obj_preds, cls_preds):
+            r = r.permute(1, 2, 0)
+            r = r.reshape(r.shape[0], r.shape[1], cfg["anchor_num"], -1)
+
+            o = o.permute(1, 2, 0)
+            o = o.reshape(o.shape[0], o.shape[1], cfg["anchor_num"], -1)
+
+            c = c.permute(1, 2, 0)
+            c = c.reshape(c.shape[0],c.shape[1], 1, c.shape[2])
+            c = c.repeat(1, 1, 3, 1)
+
+            anchor_boxes = torch.zeros(r.shape[0], r.shape[1], r.shape[2], r.shape[3] + c.shape[3] + 1)
 
             #计算anchor box的cx, cy
-            grid = make_grid(p.shape[0], p.shape[1], cfg, device)
-            stride = cfg["height"] /  p.shape[0]
-            anchor_boxes[:, :, :, :2] = ((p[:, :, :, :2].sigmoid() * 2. - 0.5) + grid) * stride
+            grid = make_grid(r.shape[0], r.shape[1], cfg, device)
+            stride = cfg["height"] /  r.shape[0]
+            anchor_boxes[:, :, :, :2] = ((r[:, :, :, :2].sigmoid() * 2. - 0.5) + grid) * stride
 
             #计算anchor box的w, h
             anchors_cfg = anchors[i]
-            anchor_boxes[:, :, :, 2:4] = (p[:, :, :, 2:4].sigmoid() * 2) ** 2 * anchors_cfg # wh
+            anchor_boxes[:, :, :, 2:4] = (r[:, :, :, 2:4].sigmoid() * 2) ** 2 * anchors_cfg # wh
 
-            #计算obj cls分数
-            anchor_boxes[:, :, :, 4:] = p[:, :, :, 4:].sigmoid()
+            #计算obj分数
+            anchor_boxes[:, :, :, 4] = o[:, :, :, 0].sigmoid()
+
+            #计算cls分数
+            anchor_boxes[:, :, :, 5:] = F.softmax(c[:, :, :, :], dim = 3)
 
             #torch tensor 转为 numpy array
             anchor_boxes = anchor_boxes.cpu().detach().numpy() 
-            bacth_bboxes.append(anchor_boxes)       
+            bacth_bboxes.append(anchor_boxes)     
 
         #n, anchor num, h, w, box => n, (anchor num*h*w), box
         bacth_bboxes = torch.from_numpy(np.array(bacth_bboxes))
-        bacth_bboxes = bacth_bboxes.view(bacth_bboxes.shape[0], -1, bacth_bboxes.shape[-1])
+        bacth_bboxes = bacth_bboxes.view(bacth_bboxes.shape[0], -1, bacth_bboxes.shape[-1]) 
 
-        #merge
         output_bboxes.append(bacth_bboxes)    
-        output = torch.cat(output_bboxes, 1)
-
+        
+    #merge
+    output = torch.cat(output_bboxes, 1)
+            
     return output
 
 #模型评估

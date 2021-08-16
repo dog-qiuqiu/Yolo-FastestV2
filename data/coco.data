@@ -4,7 +4,7 @@ model_name=coco
 [train-configure]
 epochs=300
 steps=150,250
-batch_size=64
+batch_size=128
 subdivisions=1
 learning_rate=0.001
 

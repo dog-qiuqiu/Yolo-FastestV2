@@ -62,9 +62,9 @@ def random_resize(img):
 
 def img_aug(img):
     img = contrast_and_brightness(img)
-    img = motion_blur(img)
-    img = random_resize(img)
-    img = augment_hsv(img)
+    #img = motion_blur(img)
+    #img = random_resize(img)
+    #img = augment_hsv(img)
     return img
 
 def collate_fn(batch):
