@@ -50,7 +50,7 @@ if __name__ == '__main__':
 
     #初始化模型
     model = model.detector.Detector(cfg["classes"], cfg["anchor_num"], True).to(device)
-    model.load_state_dict(torch.load(opt.weights))
+    model.load_state_dict(torch.load(opt.weights, map_location=device))
     #sets the module in eval node
     model.eval()
 

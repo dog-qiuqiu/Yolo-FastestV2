@@ -72,7 +72,7 @@ if __name__ == '__main__':
 
     # 加载预训练模型参数
     if load_param == True:
-        model.load_state_dict(torch.load(premodel_path), strict = False)
+        model.load_state_dict(torch.load(premodel_path, map_location=device), strict = False)
         print("Load finefune model param: %s" % premodel_path)
     else:
         print("Initialize weights: model/backbone/backbone.pth")

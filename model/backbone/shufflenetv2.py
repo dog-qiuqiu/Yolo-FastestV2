@@ -110,7 +110,8 @@ class ShuffleNetV2(nn.Module):
 
     def _initialize_weights(self):
         print("initialize_weights...")
-        self.load_state_dict(torch.load("./model/backbone/backbone.pth"), strict = True)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.load_state_dict(torch.load("./model/backbone/backbone.pth", map_location=device), strict = True)
 
 if __name__ == "__main__":
     model = ShuffleNetV2()
