@@ -4,7 +4,7 @@
 * ***Less resource occupation, excellent single-core performance, lower power consumption***
 * ***Faster and smaller:Trade 0.3% loss of accuracy for 30% increase in inference speed, reducing the amount of parameters by 25%***
 * ***Fast training speed, low computing power requirements, training only requires 3GB video memory, gtx1660ti training COCO 1 epoch only takes 4 minutes***
-* ***算法介绍：https://zhuanlan.zhihu.com/p/400474142***
+* ***算法介绍：https://zhuanlan.zhihu.com/p/400474142 交流qq群:1062122604***
 # Evaluating indicator/Benchmark
 Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Params(M)
 :---:|:---:|:---:|:---:|:---:|:---:|:---:
