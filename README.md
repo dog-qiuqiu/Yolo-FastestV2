@@ -155,7 +155,37 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
 ## NCNN
 * Convert onnx
   ```
-  python3 pytorch2onnx.py --data data/coco.data --weights modelzoo/coco2017-0.241078ap-model.pth
+  python3 pytorch2onnx.py --data data/coco.data --weights modelzoo/coco2017-0.241078ap-model.pth --output yolo-fastestv2.onnx
+  ```
+* onnx-sim
+  ```
+  python3 -m onnxsim yolo-fastestv2.onnx yolo-fastestv2-opt.onnx
+  ```
+* Build NCNN
+  ```
+  git clone https://github.com/Tencent/ncnn.git
+  cd ncnn
+  mkdir build
+  cd build
+  cmake ..
+  make
+  make install
+  cp -rf ./ncnn/build/install/* ~/Yolo-FastestV2/sample/ncnn
+  ```
+* Covert ncnn param and bin
+  ```
+  cd ncnn/build/tools/onnx
+  ./onnx2ncnn yolo-fastestv2-opt.onnx yolo-fastestv2.param yolo-fastestv2.bin
+  cp yolo-fastestv2* ../
+  cd ../
+  ./ncnnoptimize yolo-fastestv2.param yolo-fastestv2.bin yolo-fastestv2-opt.param yolo-fastestv2-opt.bin 1
+  cp yolo-fastestv2-opt* ~/Yolo-FastestV2/sample/ncnn/model
+  ```
+* run sample
+  ```
+  cd ~/Yolo-FastestV2/sample/ncnn
+  sh build.sh
+  ./demo
   ```
 # Reference
 * https://github.com/Tencent/ncnn
