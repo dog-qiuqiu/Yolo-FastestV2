@@ -3,8 +3,8 @@
 int main()
 {   yoloFastestv2 api;
 
-    api.loadModel("./model/yolo-fastestv2.param",
-                  "./model/yolo-fastestv2.bin");
+    api.loadModel("./model/yolo-fastestv2-opt.param",
+                  "./model/yolo-fastestv2-opt.bin");
 
     cv::Mat cvImg = cv::imread("test.jpg");
 
