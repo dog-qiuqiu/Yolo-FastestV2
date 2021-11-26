@@ -157,8 +157,10 @@ Network|COCO mAP(0.5)|Resolution|Run Time(4xCore)|Run Time(1xCore)|FLOPs(G)|Para
   ```
   python3 pytorch2onnx.py --data data/coco.data --weights modelzoo/coco2017-0.241078ap-model.pth --output yolo-fastestv2.onnx
   ```
-* onnx-sim
+* onnx-sim  
+  pt转换的onnx有很多冗余需要简化, 可以借助onnx-simplifier
   ```
+  pip install onnx-simplifier
   python3 -m onnxsim yolo-fastestv2.onnx yolo-fastestv2-opt.onnx
   ```
 * Build NCNN
