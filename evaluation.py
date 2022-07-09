@@ -57,9 +57,5 @@ if __name__ == '__main__':
     #打印模型结构
     summary(model, input_size=(3, cfg["height"], cfg["width"]))
     
-    #模型评估
     print("computer mAP...")
-    _, _, AP, _ = utils.utils.evaluation(val_dataloader, cfg, model, device)
-    print("computer PR...")
-    precision, recall, _, f1 = utils.utils.evaluation(val_dataloader, cfg, model, device, 0.3)
-    print("Precision:%f Recall:%f AP:%f F1:%f"%(precision, recall, AP, f1))
+    utils.utils.evaluation(val_dataloader, cfg, model, device)

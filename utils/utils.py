@@ -9,6 +9,9 @@ import os, time
 import numpy as np
 from tqdm import tqdm
 
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
+
 #加载data
 def load_datafile(data_path):
     #需要配置的超参数
@@ -363,6 +366,7 @@ def evaluation(val_dataloader, cfg, model, device, conf_thres = 0.01, nms_thresh
     labels = []
     sample_metrics = []  # List of tuples (TP, confs, pred)
     pbar = tqdm(val_dataloader)
+    gts, pts = [], []
 
     for imgs, targets in pbar:
         imgs = imgs.to(device).float() / 255.0
@@ -371,7 +375,7 @@ def evaluation(val_dataloader, cfg, model, device, conf_thres = 0.01, nms_thresh
         # Extract labels
         labels += targets[:, 1].tolist()
         # Rescale target
-        targets[:, 2:] = xywh2xyxy(targets[:, 2:])
+        targets[:, 2:] = xywh2xyxy(targets[:, 2:])#Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2]
         targets[:, 2:] *= torch.tensor([cfg["width"], cfg["height"], cfg["width"], cfg["height"]]).to(device)
 
         #对预测的anchorbox进行nms处理
@@ -382,15 +386,77 @@ def evaluation(val_dataloader, cfg, model, device, conf_thres = 0.01, nms_thresh
             output = handel_preds(preds, cfg, device)
             output_boxes = non_max_suppression(output, conf_thres = conf_thres, iou_thres = nms_thresh)
 
-        sample_metrics += get_batch_statistics(output_boxes, targets, iou_thres, device)
-        pbar.set_description("Evaluation model:") 
+        for p in output_boxes:
+            pbboxes = []
+            for b in p:
+                b = b.cpu().numpy()
+                score = b[4]
+                category = b[5]
+                x1, y1, x2, y2 = b[:4]
+                pbboxes.append([category, score, x1, y1, x2, y2])
+            pts.append(np.array(pbboxes))
 
-    if len(sample_metrics) == 0:  # No detections over whole validation set.
-        print("---- No detections over whole validation set ----")
-        return None
 
-    # Concatenate sample statistics
-    true_positives, pred_scores, pred_labels = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))]
-    metrics_output = ap_per_class(true_positives, pred_scores, pred_labels, labels)
-    
-    return metrics_output     
+        for n in range(len(pts)):
+            tbboxes = []
+            for t in targets:
+                if t[0] == n:
+                    t = t.cpu().numpy()
+                    category = t[1]
+                    x1, y1, x2, y2 = t[2:]
+                    tbboxes.append([category, x1, y1, x2, y2])
+            gts.append(np.array(tbboxes))
+        
+
+    mAP05 = coco_evaluate(gts, pts, cfg["names"])
+    return mAP05
+
+def coco_evaluate(gts, preds,classPath):
+
+    classes = []
+    with open(classPath, 'r') as f:
+        for line in f.readlines():
+            classes.append(line.strip())
+
+    # Create Ground Truth
+    coco_gt = COCO()
+    coco_gt.dataset = {}
+    coco_gt.dataset["images"] = []
+    coco_gt.dataset["annotations"] = []
+    k = 0
+    for i, gt in enumerate(gts):
+        for j in range(gt.shape[0]):
+            k += 1
+            coco_gt.dataset["images"].append({"id": i})
+            coco_gt.dataset["annotations"].append({"image_id": i, "category_id": gt[j, 0],
+                                                "bbox": np.hstack([gt[j, 1:3], gt[j, 3:5] - gt[j, 1:3]]),
+                                                "area": np.prod(gt[j, 3:5] - gt[j, 1:3]),
+                                                "id": k, "iscrowd": 0})
+            
+    coco_gt.dataset["categories"] = [{"id": i, "supercategory": c, "name": c} for i, c in enumerate(classes)]
+    coco_gt.createIndex()
+
+    # Create preadict 
+    coco_pred = COCO()
+    coco_pred.dataset = {}
+    coco_pred.dataset["images"] = []
+    coco_pred.dataset["annotations"] = []
+    k = 0
+    for i, pred in enumerate(preds):
+        for j in range(pred.shape[0]):
+            k += 1
+            coco_pred.dataset["images"].append({"id": i})
+            coco_pred.dataset["annotations"].append({"image_id": i, "category_id": np.int(pred[j, 0]),
+                                                    "score": pred[j, 1], "bbox": np.hstack([pred[j, 2:4], pred[j, 4:6] - pred[j, 2:4]]),
+                                                    "area": np.prod(pred[j, 4:6] - pred[j, 2:4]),
+                                                    "id": k})
+            
+    coco_pred.dataset["categories"] = [{"id": i, "supercategory": c, "name": c} for i, c in enumerate(classes)]
+    coco_pred.createIndex()
+
+    coco_eval = COCOeval(coco_gt, coco_pred, "bbox")
+    coco_eval.evaluate()
+    coco_eval.accumulate()
+    coco_eval.summarize()
+    mAP05 = coco_eval.stats[1]
+    return mAP05
