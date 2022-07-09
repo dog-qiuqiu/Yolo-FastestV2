@@ -366,6 +366,44 @@ def evaluation(val_dataloader, cfg, model, device, conf_thres = 0.01, nms_thresh
     labels = []
     sample_metrics = []  # List of tuples (TP, confs, pred)
     pbar = tqdm(val_dataloader)
+
+    for imgs, targets in pbar:
+        imgs = imgs.to(device).float() / 255.0
+        targets = targets.to(device)       
+
+        # Extract labels
+        labels += targets[:, 1].tolist()
+        # Rescale target
+        targets[:, 2:] = xywh2xyxy(targets[:, 2:])
+        targets[:, 2:] *= torch.tensor([cfg["width"], cfg["height"], cfg["width"], cfg["height"]]).to(device)
+
+        #对预测的anchorbox进行nms处理
+        with torch.no_grad():
+            preds = model(imgs)
+
+            #特征图后处理:生成anchorbox
+            output = handel_preds(preds, cfg, device)
+            output_boxes = non_max_suppression(output, conf_thres = conf_thres, iou_thres = nms_thresh)
+
+        sample_metrics += get_batch_statistics(output_boxes, targets, iou_thres, device)
+        pbar.set_description("Evaluation model:") 
+
+    if len(sample_metrics) == 0:  # No detections over whole validation set.
+        print("---- No detections over whole validation set ----")
+        return None
+
+    # Concatenate sample statistics
+    true_positives, pred_scores, pred_labels = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))]
+    metrics_output = ap_per_class(true_positives, pred_scores, pred_labels, labels)
+    
+    return metrics_output
+    
+#COCO模型评估
+def coco_evaluation(val_dataloader, cfg, model, device, conf_thres = 0.01, nms_thresh = 0.4, iou_thres = 0.5):
+
+    labels = []
+    sample_metrics = []  # List of tuples (TP, confs, pred)
+    pbar = tqdm(val_dataloader)
     gts, pts = [], []
 
     for imgs, targets in pbar:
