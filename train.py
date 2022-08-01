@@ -18,8 +18,12 @@ import utils.utils
 import utils.datasets
 import model.detector
 
+from torch.utils.tensorboard import SummaryWriter
+
 
 if __name__ == '__main__':
+    writer = SummaryWriter()
+    
     # 指定训练配置文件
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='',
@@ -139,9 +143,14 @@ if __name__ == '__main__':
             print("computer PR...")
             precision, recall, _, f1 = utils.utils.evaluation(val_dataloader, cfg, model, device, 0.3)
             print("Precision:%f Recall:%f AP:%f F1:%f"%(precision, recall, AP, f1))
+            
+            writer.add_scalar("Precision/valid", precision, epoch)
+            writer.add_scalar("Recall/valid", recall, epoch)
+            writer.add_scalar("AP/valid", AP, epoch)
 
             torch.save(model.state_dict(), "weights/%s-%d-epoch-%fap-model.pth" %
                       (cfg["model_name"], epoch, AP))
 
         # 学习率调整
         scheduler.step()
+    writer.close()
