@@ -1,4 +1,3 @@
-import cv2
 import time
 
 import torch
@@ -8,6 +7,7 @@ import torch.nn.functional as F
 import os, time
 import numpy as np
 from tqdm import tqdm
+import cv2
 
 #加载data
 def load_datafile(data_path):
@@ -134,53 +134,46 @@ def compute_ap(recall, precision):
     ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
     return ap
 
-def ap_per_class(tp, conf, pred_cls, target_cls):
+def ap_per_class(tp, conf, n_gt):
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
         tp:    True positives (list).
         conf:  Objectness value from 0-1 (list).
-        pred_cls: Predicted object classes (list).
-        target_cls: True object classes (list).
+        n_gt: gt num
     # Returns
         The average precision as computed in py-faster-rcnn.
     """
+    # tp shape (38400,)  conf shape (38400,)
 
     # Sort by objectness
-    i = np.argsort(-conf)
-    tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
-
-    # Find unique classes
-    unique_classes = np.unique(target_cls)
+    i = np.argsort(-conf) # i是置信度从大到小的排列序号
+    tp, conf = tp[i], conf[i] # 排好序
 
     # Create Precision-Recall curve and compute AP for each class
+    n_p = len(tp)  # Number of predicted objects
     ap, p, r = [], [], []
-    for c in unique_classes:
-        i = pred_cls == c
-        n_gt = (target_cls == c).sum()  # Number of ground truth objects
-        n_p = i.sum()  # Number of predicted objects
+    if n_p == 0 and n_gt == 0:
+        pass
+    elif n_p == 0 or n_gt == 0:
+        ap.append(0)
+        r.append(0)
+        p.append(0)
+    elif n_p != 0 and n_gt != 0:
+        # Accumulate FPC and TPs
+        fpc = (1 - tp[i]).cumsum()
+        tpc = (tp[i]).cumsum()
 
-        if n_p == 0 and n_gt == 0:
-            continue
-        elif n_p == 0 or n_gt == 0:
-            ap.append(0)
-            r.append(0)
-            p.append(0)
-        else:
-            # Accumulate FPs and TPs
-            fpc = (1 - tp[i]).cumsum()
-            tpc = (tp[i]).cumsum()
+        # Recall
+        recall_curve = tpc / (n_gt + 1e-16)
+        r.append(recall_curve[-1])
 
-            # Recall
-            recall_curve = tpc / (n_gt + 1e-16)
-            r.append(recall_curve[-1])
+        # Precision
+        precision_curve = tpc / (n_p + 1e-16)
+        p.append(precision_curve[-1])
 
-            # Precision
-            precision_curve = tpc / (tpc + fpc)
-            p.append(precision_curve[-1])
-
-            # AP from recall-precision curve
-            ap.append(compute_ap(recall_curve, precision_curve))
+        # AP from recall-precision curve
+        ap.append(compute_ap(recall_curve, precision_curve))
 
     # Compute F1 score (harmonic mean of precision and recall)
     p, r, ap = np.array(p), np.array(r), np.array(ap)
@@ -190,87 +183,69 @@ def ap_per_class(tp, conf, pred_cls, target_cls):
 
 def get_batch_statistics(outputs, targets, iou_threshold, device):
     """ Compute true positives, predicted scores and predicted labels per sample """
+    # targets shape [641, 5]
     batch_metrics = []
-    for sample_i in range(len(outputs)):
+    for sample_i in range(len(outputs)): # length 128
 
         if outputs[sample_i] is None:
             continue
 
-        output = outputs[sample_i]
-        pred_boxes = output[:, :4]
-        pred_scores = output[:, 4]
-        pred_labels = output[:, -1]
+        output = outputs[sample_i] # [300, 5] # 每一个样本中框的集合
+        pred_boxes = output[:, :4] # [300, 4]
+        pred_scores = output[:, 4] # [300, ]
 
-        true_positives = np.zeros(pred_boxes.shape[0])
+        true_positives = np.zeros(pred_boxes.shape[0]) # [300, ] # 预测框one hot其中正确的位置被标记为1，其他保持0
 
-        annotations = targets[targets[:, 0] == sample_i][:, 1:]
-        target_labels = annotations[:, 0] if len(annotations) else []
+        annotations = targets[targets[:, 0] == sample_i][:, 1:] # 3个锚框 [3, 4]
+
         if len(annotations):
             detected_boxes = []
-            target_boxes = annotations[:, 1:]
+            target_boxes = annotations
 
-            for pred_i, (pred_box, pred_label) in enumerate(zip(pred_boxes, pred_labels)):
+            for pred_i, pred_box in enumerate(pred_boxes):
                 
                 pred_box = pred_box.to(device)
-                pred_label = pred_label.to(device)
 
                 # If targets are found break
                 if len(detected_boxes) == len(annotations):
                     break
-
-                # Ignore if label is not one of the target labels
-                if pred_label.to(device) not in target_labels:
-                    continue
-
                 iou, box_index = bbox_iou(pred_box.unsqueeze(0), target_boxes).max(0)
                 if iou >= iou_threshold and box_index not in detected_boxes:
                     true_positives[pred_i] = 1
                     detected_boxes += [box_index]
-        batch_metrics.append([true_positives, pred_scores, pred_labels])
+        batch_metrics.append([true_positives, pred_scores])
     return batch_metrics
 
-def non_max_suppression(prediction, conf_thres=0.3, iou_thres=0.45, classes=None):
+def non_max_suppression(prediction, conf_thres=0.3, iou_thres=0.45):
     """Performs Non-Maximum Suppression (NMS) on inference results
+    Inputs:
+         prediction: (x0, y0, w, h)
     Returns:
-         detections with shape: nx6 (x1, y1, x2, y2, conf, cls)
+         detections with shape: nx5 (x1, y1, x2, y2, conf)
     """
-
-    nc = prediction.shape[2] - 5  # number of classes
+    # prediction shape [128, 450, 5]
 
     # Settings
-    # (pixels) minimum and maximum box width and height
-    max_wh = 4096
     max_det = 300  # maximum number of detections per image
     max_nms = 30000  # maximum number of boxes into torchvision.ops.nms()
     time_limit = 1.0  # seconds to quit after
-    multi_label = nc > 1  # multiple labels per box (adds 0.5ms/img)
 
     t = time.time()
-    output = [torch.zeros((0, 6), device="cpu")] * prediction.shape[0]
+    output = [torch.zeros((0, 5), device="cpu")] * prediction.shape[0] # shape [0, 5] x 128 0位置让这个维度可以放任意维度的矩阵
 
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
-        # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
         x = x[x[..., 4] > conf_thres]  # confidence
 
         # If none remain process next image
         if not x.shape[0]:
             continue
 
-        # Compute conf
-        x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
-
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
-        box = xywh2xyxy(x[:, :4])
+        box, conf = xywh2xyxy(x[:, :4]), x[:, 4:]        
+        x = torch.cat((box, conf), 1)
 
-        # Detections matrix nx6 (xyxy, conf, cls)
-        conf, j = x[:, 5:].max(1, keepdim=True)
-        x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
-
-        # Filter by class
-        if classes is not None:
-            x = x[(x[:, 5:6] == torch.tensor(classes, device=x.device)).any(1)]
-
+        # Detections matrix nx5 (xyxy, conf)  x shape [450, 5]
         # Check shape
         n = x.shape[0]  # number of boxes
         if not n:  # no boxes
@@ -280,9 +255,8 @@ def non_max_suppression(prediction, conf_thres=0.3, iou_thres=0.45, classes=None
             x = x[x[:, 4].argsort(descending=True)[:max_nms]]
 
         # Batched NMS
-        c = x[:, 5:6] * max_wh  # classes
         # boxes (offset by class), scores
-        boxes, scores = x[:, :4] + c, x[:, 4]
+        boxes, scores = x[:, :4], x[:, 4]
         i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
         if i.shape[0] > max_det:  # limit detections
             i = i[:max_det]
@@ -297,39 +271,39 @@ def non_max_suppression(prediction, conf_thres=0.3, iou_thres=0.45, classes=None
 
 def make_grid(h, w, cfg, device):
     hv, wv = torch.meshgrid([torch.arange(h), torch.arange(w)])
-    return torch.stack((wv, hv), 2).repeat(1,1,3).reshape(h, w, cfg["anchor_num"], -1).to(device)
+    return torch.stack((wv, hv), 2).repeat(1,1,3).reshape(h, w, cfg["m_config"]["anchor_num"], -1).to(device)
 
 #特征图后处理
 def handel_preds(preds, cfg, device):
     #加载anchor配置
-    anchors = np.array(cfg["anchors"])
-    anchors = torch.from_numpy(anchors.reshape(len(preds) // 3, cfg["anchor_num"], 2)).to(device)
-
+    anchors = np.array(cfg["m_config"]["anchors"])
+    # [2, 3, 2]
+    anchors = torch.from_numpy(anchors.reshape(len(preds) // 2, cfg["m_config"]["anchor_num"], 2)).to(device)
     output_bboxes = []
-    layer_index = [0, 0, 0, 1, 1, 1]
 
-    for i in range(len(preds) // 3):
-        bacth_bboxes = []
-        reg_preds = preds[i * 3]
-        obj_preds = preds[(i * 3) + 1]
-        cls_preds = preds[(i * 3) + 2]
+    for i in range(len(preds) // 2): # 0~2
+        batch_bboxes = []
+        reg_preds = preds[i * 2]
+        obj_preds = preds[(i * 2) + 1]
 
-        for r, o, c in zip(reg_preds, obj_preds, cls_preds):
+        for index, r, o in zip(range(len(reg_preds)), reg_preds, obj_preds):
+            # [12, 10, 12]
             r = r.permute(1, 2, 0)
-            r = r.reshape(r.shape[0], r.shape[1], cfg["anchor_num"], -1)
+            # [12, 10, 3, 4]
+            r = r.reshape(r.shape[0], r.shape[1], cfg["m_config"]["anchor_num"], -1)
 
+            # [12, 10, 3]
             o = o.permute(1, 2, 0)
-            o = o.reshape(o.shape[0], o.shape[1], cfg["anchor_num"], -1)
+            # [12, 10, 3, 1]
+            o = o.reshape(o.shape[0], o.shape[1], cfg["m_config"]["anchor_num"], -1)
 
-            c = c.permute(1, 2, 0)
-            c = c.reshape(c.shape[0],c.shape[1], 1, c.shape[2])
-            c = c.repeat(1, 1, 3, 1)
-
-            anchor_boxes = torch.zeros(r.shape[0], r.shape[1], r.shape[2], r.shape[3] + c.shape[3] + 1)
+            # [12, 10, 3, 5] # 前两个为高和宽的尺寸,第三个为anchor_num, 最后为xywh+conf
+            anchor_boxes = torch.zeros(r.shape[0], r.shape[1], r.shape[2], r.shape[3] + 1)
 
             #计算anchor box的cx, cy
+            # [12, 10, 3, 2]
             grid = make_grid(r.shape[0], r.shape[1], cfg, device)
-            stride = cfg["height"] /  r.shape[0]
+            stride = cfg["m_config"]["height"] /  r.shape[0] # value 16.0 or 32.0
             anchor_boxes[:, :, :, :2] = ((r[:, :, :, :2].sigmoid() * 2. - 0.5) + grid) * stride
 
             #计算anchor box的w, h
@@ -339,50 +313,48 @@ def handel_preds(preds, cfg, device):
             #计算obj分数
             anchor_boxes[:, :, :, 4] = o[:, :, :, 0].sigmoid()
 
-            #计算cls分数
-            anchor_boxes[:, :, :, 5:] = F.softmax(c[:, :, :, :], dim = 3)
-
             #torch tensor 转为 numpy array
             anchor_boxes = anchor_boxes.cpu().detach().numpy() 
-            bacth_bboxes.append(anchor_boxes)     
+            batch_bboxes.append(anchor_boxes)     
 
         #n, anchor num, h, w, box => n, (anchor num*h*w), box
-        bacth_bboxes = torch.from_numpy(np.array(bacth_bboxes))
-        bacth_bboxes = bacth_bboxes.view(bacth_bboxes.shape[0], -1, bacth_bboxes.shape[-1]) 
+        batch_bboxes = torch.from_numpy(np.array(batch_bboxes)) # [128, 12, 10, 3, 5]
+        batch_bboxes = batch_bboxes.view(batch_bboxes.shape[0], -1, batch_bboxes.shape[-1]) # [128, 360, 5]
 
-        output_bboxes.append(bacth_bboxes)    
+        output_bboxes.append(batch_bboxes)    
         
-    #merge
-    output = torch.cat(output_bboxes, 1)
+    #merge 两个特征图上的检测结果合并，其中第一个图预测结果更多，因为尺寸更大
+    output = torch.cat(output_bboxes, 1) # [128, 450, 5]
             
     return output
 
 #模型评估
 def evaluation(val_dataloader, cfg, model, device, conf_thres = 0.01, nms_thresh = 0.4, iou_thres = 0.5):
-
+    
     labels = []
     sample_metrics = []  # List of tuples (TP, confs, pred)
     pbar = tqdm(val_dataloader)
 
-    for imgs, targets in pbar:
-        imgs = imgs.to(device).float() / 255.0
-        targets = targets.to(device)       
-
-        # Extract labels
-        labels += targets[:, 1].tolist()
+    gt_num = 0
+    for imgs, targets in pbar: # [128, 80448] [641, 5]
+        imgs = imgs.to(device)
+        targets = targets.to(device)
+        gt_num += len(targets)    
+        
         # Rescale target
-        targets[:, 2:] = xywh2xyxy(targets[:, 2:])
-        targets[:, 2:] *= torch.tensor([cfg["width"], cfg["height"], cfg["width"], cfg["height"]]).to(device)
+        targets[:, 1:] = xywh2xyxy(targets[:, 1:])
+        targets[:, 1:] *= torch.tensor([cfg["m_config"]["width"], cfg["m_config"]["height"], 
+                                        cfg["m_config"]["width"], cfg["m_config"]["height"]]).to(device)
 
         #对预测的anchorbox进行nms处理
         with torch.no_grad():
-            preds = model(imgs)
+            preds = model(imgs)[: -1]
 
             #特征图后处理:生成anchorbox
             output = handel_preds(preds, cfg, device)
             output_boxes = non_max_suppression(output, conf_thres = conf_thres, iou_thres = nms_thresh)
 
-        sample_metrics += get_batch_statistics(output_boxes, targets, iou_thres, device)
+        sample_metrics += get_batch_statistics(output_boxes, targets, iou_thres, device) # 每批数据的预测结果的情况追加
         pbar.set_description("Evaluation model:") 
 
     if len(sample_metrics) == 0:  # No detections over whole validation set.
@@ -390,7 +362,65 @@ def evaluation(val_dataloader, cfg, model, device, conf_thres = 0.01, nms_thresh
         return None
 
     # Concatenate sample statistics
-    true_positives, pred_scores, pred_labels = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))]
-    metrics_output = ap_per_class(true_positives, pred_scores, pred_labels, labels)
+    true_positives, pred_scores = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))] # 将一个batch的预测结果整合
+    metrics_output = ap_per_class(true_positives, pred_scores, gt_num)
     
-    return metrics_output     
+    return metrics_output
+
+def dump_data(features, dump_dir, total_boxs=None, confs=None):
+
+    os.makedirs(dump_dir, exist_ok=True)
+    features = features[:, 0]
+    _, height, width = features.shape
+    resize_width, resize_height = width * 2, height * 2
+    imgs = []
+    for index, feature in enumerate(features):
+        feature = cv2.resize(feature, (resize_width, resize_height))
+        feature = feature - feature.min()
+        feature /= (feature.max() + 1e-6)
+        feature = (feature * 255).astype('uint8')
+        img = cv2.applyColorMap(feature, cv2.COLORMAP_VIRIDIS)
+        imgs.append(img)
+
+    if not isinstance(total_boxs, list):
+        total_boxs = total_boxs.tolist()
+    total_boxs.sort(key=lambda x: (x[0], x[1]))
+
+    for index, (img_index, x0, y0, w, h) in enumerate(total_boxs):
+        x1, y1 = max(0, x0 - w / 2), max(0, y0 - h / 2)
+        x2, y2 = min(1, x0 + w / 2), max(1, y0 + h / 2)
+        x1 = int(x1 * resize_width)
+        y1 = int(y1 * resize_height)
+        x2 = int(x2 * resize_width)
+        y2 = int(y2 * resize_height) - 1
+        imgs[int(img_index)] = cv2.rectangle(imgs[int(img_index)], (x1, y1), (x2, y2), (0, 0, 255))
+        if confs:
+            imgs[int(img_index)] = cv2.putText(imgs[int(img_index)], '{:.2f}'.format(confs[index]), (x1, y1 - 5 if index % 2 == 0 else y1 + 12), 0, 0.4, (0, 0, 255))
+
+    for index, img in enumerate(imgs):
+        cv2.imwrite(os.path.join(dump_dir, 'cqt_{}.png'.format(index)), imgs[index])
+
+def dump_test_data(feature, dump_dir, total_notes, cqt_config):
+
+    os.makedirs(dump_dir, exist_ok=True)
+    height, width = feature.shape
+    resize_width, resize_height = width * 2, height * 2
+    feature = cv2.resize(feature, (resize_width, resize_height))
+    feature = feature - feature.min()
+    feature /= (feature.max() + 1e-6)
+    feature = (feature * 255).astype('uint8')
+    img = cv2.applyColorMap(feature, cv2.COLORMAP_VIRIDIS)
+    time_length = width * cqt_config['hop'] / cqt_config['sr']
+    n_bins = cqt_config['n_bins']
+
+    for onset, offset, pitch in total_notes:
+        x1 = int(onset * resize_width / time_length)
+        x2 = int(offset * resize_width / time_length)
+        y1 = int((pitch - 21) * cqt_config['bins_per_octave'] / 12 / n_bins * resize_height)
+        y2 = resize_height - 1
+        img = cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255))
+
+    cv2.imwrite(os.path.join(dump_dir, 'total_cqt.png'), img)
+
+def convert_boxs_to_notes():
+    pass

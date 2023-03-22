@@ -1,0 +1,35 @@
+{
+  "model_name": "musicyolo",
+  "cqt": {
+    "sr": 16000,
+    "fmin": 27.5,
+    "hop": 320,
+    "bins_per_octave": 24,
+    "n_bins": 176,
+    "overlap_ratio": 0.7,
+    "duration": 3.0
+  },
+  "min_duration": 0.1,
+  "opt": {
+    "epochs": 1500,
+    "steps": [500, 1000],
+    "batch_size": 128,
+    "subdivisions": 1,
+    "learning_rate": 0.001
+  },
+  "m_config": {
+    "pre_weights": null,
+    "height": 192,
+    "width": 160,
+    "anchor_num": 3,
+    "anchors": [[8.89,101.38], [14.74,99.00], [20.48,102.73], [30.51,97.87], [48.23,101.96], [85.70,105.78]]
+  },
+  "dataset_dir" : "/home/data/SSVD-v2.0",
+  "datadump_dir" : "/home/data/wxk/tmp_ssvd_2",
+  "checkdata_dir": null,
+  "test": {
+    "test_checkdata_dir": "_test_check",
+    "overlap_ratio": 0.7
+  },
+  "save_dir": "/home/data/wxk/tmp_musicyolo_model/initial"
+}

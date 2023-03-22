@@ -26,12 +26,13 @@ if __name__ == '__main__':
 
     with open(args.config) as f:
         cfg = json.load(f)
-    model = model.detector.Detector(cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], 
+    net = model.detector.Detector(cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], 
                                     cfg["m_config"]["anchor_num"], False).to(device)
-    model.load_state_dict(torch.load(args.weights, map_location=device))
+    net.load_state_dict(torch.load(args.weights, map_location=device))
+    cqt_transform = model.detector.CQTSpectrogram(cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], interpolate=False)
 
     #sets the module in eval node
-    model.eval()
+    net.eval()
     batch_size = int(cfg["opt"]["batch_size"] / cfg["opt"]["subdivisions"])
     nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
     batch_size = 128
@@ -42,7 +43,6 @@ if __name__ == '__main__':
     filepaths = [os.path.join(args.testdir, file) for file in os.listdir(args.testdir)][1:2]
 
     for filepath in filepaths:
-        print(filepath)
         cfg["cqt"]["overlap_ratio"] = cfg["test"]["overlap_ratio"]
         testset = utils.datasets.TestDataset(cfg["cqt"], filepath)
         loader = torch.utils.data.DataLoader(testset,
@@ -52,43 +52,34 @@ if __name__ == '__main__':
                                              drop_last=False,
                                              persistent_workers=True
                                              )
+        output_boxes = []
         for index, data in enumerate(loader): # [6, 80448] 等效于多张频谱图
             data = data.to(device)
-            preds = model(data)
+            preds = net(data)
             cqt = preds[-1]
             preds = preds[: -1]
 
             # 把预测出来的归一化坐标转换到yolox输入图像的尺寸
             output = utils.utils.handel_preds(preds, cfg, device)
             # 可以当做一个二维list，第一层代表第几个数据，第二层为每张图像上框的数量
-            output_boxes = utils.utils.non_max_suppression(output, conf_thres = 0.3, iou_thres = 0.4)
-            total_notes = []
-            total_boxs = []
-            confs = []
-            for feature_idx, output_box in enumerate(output_boxes):
-                notes = []
-                for box in output_box:
-                    box = box.tolist()
-                    x1, y1 = int(box[0] * scale_w), int(box[1] * scale_h)
-                    x2, y2 = int(box[2] * scale_w), int(box[3] * scale_h)
-                    onset = x1 * cfg["cqt"]["hop"] / cfg["cqt"]["sr"]
-                    offset = x2 * cfg["cqt"]["hop"] / cfg["cqt"]["sr"]
-                    pitch = y1 / (cfg["cqt"]["bins_per_octave"] / 12) + 21
-                    notes.append([onset, offset, pitch])
-                    x1 = box[0] / cfg["m_config"]["width"]
-                    y1 = box[1] / cfg["m_config"]["height"]
-                    x2 = box[2] / cfg["m_config"]["width"]
-                    y2 = box[3] / cfg["m_config"]["height"]
-                    w, h = x2 - x1, y2 - y1
-                    x0 = x1 + w / 2
-                    y0 = y1 + h / 2
-                    total_boxs.append([feature_idx, x0, y0, w, h])
-                    confs.append(box[-1])
+            output_box = utils.utils.non_max_suppression(output, conf_thres = 0.3, iou_thres = 0.4)
+            output_boxes.extend(output_box)
 
-                notes.sort(key=lambda x: x[0])
-                total_notes.append(notes)
+        hop_len = (1. - cfg["cqt"]["overlap_ratio"]) * cfg["m_config"]["width"]
+        total_notes = utils.utils.convert_boxs_to_notes(output_boxes, )
+        for box in output_boxes[0]:
+            box = box.tolist()
+            x1, y1 = int(box[0] * scale_w), int(box[1] * scale_h)
+            x2, y2 = int(box[2] * scale_w), int(box[3] * scale_h)
+            onset = x1 * cfg["cqt"]["hop"] / cfg["cqt"]["sr"]
+            offset = x2 * cfg["cqt"]["hop"] / cfg["cqt"]["sr"]
+            pitch = y1 / (cfg["cqt"]["bins_per_octave"] / 12) + 21
+            total_notes.append([onset, offset, pitch])
 
-            if cfg["test"]["test_checkdata_dir"]:
-                utils.utils.dump_data(cqt.cpu().numpy(), cfg["test"]["test_checkdata_dir"],
-                                      np.array(total_boxs), confs)
-                exit(0)
+        total_notes.sort(key=lambda x: x[0])
+        print(total_notes, filepath)
+        feature = cqt_transform(testset.get_total_audio())[0, 0].numpy()
+
+        if cfg["test"]["test_checkdata_dir"]:
+            utils.utils.dump_test_data(feature, cfg["test"]["test_checkdata_dir"], total_notes, cfg["cqt"])
+            exit(0)

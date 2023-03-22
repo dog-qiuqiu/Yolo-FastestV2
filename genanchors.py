@@ -3,16 +3,11 @@ Created on Feb 20, 2017
 
 @author: jumabek
 '''
-from os import listdir
-from os.path import isfile, join
 import argparse
-#import cv2
 import numpy as np
 import sys
 import os
-import shutil
-import random 
-import math
+import random
 
 def IOU(x,centroids):
     similarities = []
@@ -99,7 +94,24 @@ def kmeans(X,centroids,eps,anchor_file, width_in_cfg_file, height_in_cfg_file):
             centroids[j] = centroid_sums[j]/(np.sum(assignments==j))
         
         prev_assignments = assignments.copy()     
-        old_D = D.copy()  
+        old_D = D.copy() 
+
+def gen_anchor(output_dir, num_clusters, annotation_dims, width_in_cfg_file, height_in_cfg_file):
+    eps = 0.005
+    if num_clusters == 0:
+        for num_clusters in range(1,11): #we make 1 through 10 clusters 
+            anchor_file = os.path.join(output_dir,'anchors%d.txt'%(num_clusters))
+
+            indices = [ random.randrange(annotation_dims.shape[0]) for i in range(num_clusters)]
+            centroids = annotation_dims[indices]
+            kmeans(annotation_dims,centroids,eps,anchor_file, width_in_cfg_file, height_in_cfg_file)
+            print('centroids.shape', centroids.shape)
+    else:
+        anchor_file = os.path.join(output_dir,'anchors%d.txt'%(num_clusters))
+        indices = [ random.randrange(annotation_dims.shape[0]) for i in range(num_clusters)]
+        centroids = annotation_dims[indices]
+        kmeans(annotation_dims,centroids,eps,anchor_file, width_in_cfg_file, height_in_cfg_file)
+        print('centroids.shape', centroids.shape) 
 
 def main(argv):
     parser = argparse.ArgumentParser()
@@ -130,11 +142,7 @@ def main(argv):
     size = np.zeros((1,1,3))
     for line in lines:
                     
-        #line = line.replace('images','labels')
-        #line = line.replace('img1','labels')
         line = line.replace('JPEGImages','labels')        
-        
-
         line = line.replace('.jpg','.txt')
         line = line.replace('.png','.txt')
         print(line)
@@ -142,28 +150,13 @@ def main(argv):
         for line in f2.readlines():
             line = line.rstrip('\n')
             w,h = line.split(' ')[3:]            
-            #print(w,h)
             annotation_dims.append(tuple(map(float,(w,h))))
     annotation_dims = np.array(annotation_dims)
   
-    eps = 0.005
     width_in_cfg_file = args.input_width
     height_in_cfg_file = args.input_height
-
-    if args.num_clusters == 0:
-        for num_clusters in range(1,11): #we make 1 through 10 clusters 
-            anchor_file = join( args.output_dir,'anchors%d.txt'%(num_clusters))
-
-            indices = [ random.randrange(annotation_dims.shape[0]) for i in range(num_clusters)]
-            centroids = annotation_dims[indices]
-            kmeans(annotation_dims,centroids,eps,anchor_file, width_in_cfg_file, height_in_cfg_file)
-            print('centroids.shape', centroids.shape)
-    else:
-        anchor_file = join( args.output_dir,'anchors%d.txt'%(args.num_clusters))
-        indices = [ random.randrange(annotation_dims.shape[0]) for i in range(args.num_clusters)]
-        centroids = annotation_dims[indices]
-        kmeans(annotation_dims,centroids,eps,anchor_file, width_in_cfg_file, height_in_cfg_file)
-        print('centroids.shape', centroids.shape)
+    gen_anchor(args.output_dir, args.num_clusters, annotation_dims, width_in_cfg_file, height_in_cfg_file)
+    
 
 if __name__=="__main__":
     main(sys.argv)

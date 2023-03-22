@@ -1,6 +1,9 @@
 model/__pycache__
 model/backbone/__pycache__
 utils/__pycache__
-weights
+*weights
 data/voc.data
 data/voc.names
+*.pyc
+*_check*
+*.onnx

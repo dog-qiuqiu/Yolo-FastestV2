@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torchsummary import summary
 
 class ShuffleV2Block(nn.Module):
     def __init__(self, inp, oup, mid_channels, *, ksize, stride):
@@ -46,6 +45,8 @@ class ShuffleV2Block(nn.Module):
             self.branch_proj = None
 
     def forward(self, old_x):
+        # 实现了两个类型的模块，不降采样和降采样的
+        # 不降采样的通道不变（前置channel split）降采样的通道翻倍
         if self.stride==1:
             x_proj, x = self.channel_shuffle(old_x)
             return torch.cat((x_proj, self.branch_main(x)), 1)
@@ -71,12 +72,14 @@ class ShuffleNetV2(nn.Module):
 
         # building first layer
         input_channel = self.stage_out_channels[1]
+        # shufflenetv2开头已经降采样了两次
+        # 用作降采样
         self.first_conv = nn.Sequential(
-            nn.Conv2d(3, input_channel, 3, 2, 1, bias=False),
+            nn.Conv2d(1, input_channel, 3, 2, 1, bias=False),
             nn.BatchNorm2d(input_channel),
             nn.ReLU(inplace=True),
         )
-
+        # 继续降采样
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         stage_names = ["stage2", "stage3", "stage4"]
@@ -85,6 +88,7 @@ class ShuffleNetV2(nn.Module):
             output_channel = self.stage_out_channels[idxstage+2]
             stageSeq = []
             for i in range(numrepeat):
+                # 每一个阶段的第一块先降采样，并将通道扩充两倍，其他块则保持尺寸不变
                 if i == 0:
                     stageSeq.append(ShuffleV2Block(input_channel, output_channel, 
                                                 mid_channels=output_channel // 2, ksize=3, stride=2))
@@ -94,17 +98,16 @@ class ShuffleNetV2(nn.Module):
                 input_channel = output_channel
             setattr(self, stage_names[idxstage], nn.Sequential(*stageSeq))
         
-        if load_param == False:
-            self._initialize_weights()
-        else:
+        if load_param == True:
             print("load param...")
+            self._initialize_weights()
 
-    def forward(self, x):
-        x = self.first_conv(x)
-        x = self.maxpool(x)
-        C1 = self.stage2(x)
-        C2 = self.stage3(C1)
-        C3 = self.stage4(C2)
+    def forward(self, x): # [1, 1, 192, 160]
+        x = self.first_conv(x) # [1, 24, 96, 80]
+        x = self.maxpool(x) # [1, 24, 48, 40]
+        C1 = self.stage2(x) # [1, 48, 24, 20]
+        C2 = self.stage3(C1) # [1, 96, 12, 10]
+        C3 = self.stage4(C2) # [1, 192, 6, 5]
 
         return C2, C3
 
