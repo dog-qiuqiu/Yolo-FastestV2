@@ -4,6 +4,7 @@ import random
 import numpy as np
 import math
 import torch
+import soundfile as sf
 
 def contrast_and_brightness(img):
     alpha = random.uniform(0.25, 1.75)
@@ -167,10 +168,18 @@ class TestDataset():
         overlap_ratio = cqt_config['overlap_ratio']
         big_hop = int(cqt_config['duration'] * sr * (1 - overlap_ratio))
 
-        audio = np.load(audio_path, allow_pickle=True).astype('float32') / 32768
-        self.audio = np.pad(audio, (n_fft//2, 0))
-        self.num = (len(audio) - window_length) // big_hop + 1
-    
+        if audio_path.endswith('.npy'):
+            audio = np.load(audio_path, allow_pickle=True).astype('float32') / 32768
+        else:
+            audio, sr = sf.read(audio_path, dtype='float32')
+            assert sr == cqt_config['sr'], 'the audio should be resample to {} first'.format(cqt_config['sr'])
+        audio = np.pad(audio, (n_fft//2, 0))
+        num = int(np.ceil((len(audio) - window_length) / big_hop)) + 1
+        expect_len = window_length + (num - 1) * big_hop
+        audio = np.pad(audio, (0, expect_len - len(audio)))        
+
+        self.audio = audio
+        self.num = num
         self.aug = aug
         self.big_hop = big_hop
         self.window_length = window_length

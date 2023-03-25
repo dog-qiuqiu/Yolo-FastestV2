@@ -26,8 +26,11 @@ if __name__ == '__main__':
 
     with open(args.config) as f:
         cfg = json.load(f)
-    net = model.detector.Detector(cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], 
-                                    cfg["m_config"]["anchor_num"], False).to(device)
+
+    net = model.detector.Detector(
+        cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], 
+        cfg["m_config"]["anchor_num"], False, 
+        convert2image=cfg["m_config"]["convert2image"]).to(device)
     net.load_state_dict(torch.load(args.weights, map_location=device))
     cqt_transform = model.detector.CQTSpectrogram(cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], interpolate=False)
 
@@ -36,13 +39,9 @@ if __name__ == '__main__':
     batch_size = int(cfg["opt"]["batch_size"] / cfg["opt"]["subdivisions"])
     nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
     batch_size = 128
-    h = cfg["cqt"]["n_bins"]
-    w = int(cfg["cqt"]["duration"] * cfg["cqt"]["sr"] / cfg["cqt"]["hop"])
+    filepaths = [os.path.join(args.testdir, file) for file in os.listdir(args.testdir)]
 
-    scale_h, scale_w = h / cfg["m_config"]["height"], w / cfg["m_config"]["width"]
-    filepaths = [os.path.join(args.testdir, file) for file in os.listdir(args.testdir)][1:2]
-
-    for filepath in filepaths:
+    for fileno, filepath in enumerate(filepaths):
         cfg["cqt"]["overlap_ratio"] = cfg["test"]["overlap_ratio"]
         testset = utils.datasets.TestDataset(cfg["cqt"], filepath)
         loader = torch.utils.data.DataLoader(testset,
@@ -65,21 +64,14 @@ if __name__ == '__main__':
             output_box = utils.utils.non_max_suppression(output, conf_thres = 0.3, iou_thres = 0.4)
             output_boxes.extend(output_box)
 
-        hop_len = (1. - cfg["cqt"]["overlap_ratio"]) * cfg["m_config"]["width"]
-        total_notes = utils.utils.convert_boxs_to_notes(output_boxes, )
-        for box in output_boxes[0]:
-            box = box.tolist()
-            x1, y1 = int(box[0] * scale_w), int(box[1] * scale_h)
-            x2, y2 = int(box[2] * scale_w), int(box[3] * scale_h)
-            onset = x1 * cfg["cqt"]["hop"] / cfg["cqt"]["sr"]
-            offset = x2 * cfg["cqt"]["hop"] / cfg["cqt"]["sr"]
-            pitch = y1 / (cfg["cqt"]["bins_per_octave"] / 12) + 21
-            total_notes.append([onset, offset, pitch])
-
+        scale_h = cfg["cqt"]["n_bins"] / (cfg["cqt"]["bins_per_octave"] / 12) / cfg["m_config"]["height"]
+        scale_w = cfg["cqt"]["duration"] / cfg["m_config"]["width"]
+        hop = (1. - cfg["cqt"]["overlap_ratio"]) * cfg["m_config"]["width"]
+        total_notes = utils.utils.convert_boxs_to_notes(output_boxes, hop, scale_h, scale_w, cfg["m_config"]["width"])
         total_notes.sort(key=lambda x: x[0])
-        print(total_notes, filepath)
+        print(filepath)
         feature = cqt_transform(testset.get_total_audio())[0, 0].numpy()
 
         if cfg["test"]["test_checkdata_dir"]:
-            utils.utils.dump_test_data(feature, cfg["test"]["test_checkdata_dir"], total_notes, cfg["cqt"])
-            exit(0)
+            utils.utils.dump_test_data(feature, cfg["test"]["test_checkdata_dir"], total_notes, cfg["cqt"], no=str(fileno))
+            # exit(0)

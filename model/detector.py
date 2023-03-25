@@ -6,9 +6,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.fpn import *
 from model.backbone.shufflenetv2 import *
 import nnAudio.features
+import cv2
 
 class CQTSpectrogram(nn.Module):
-    def __init__(self, cqt_config, width, height, log_scale=True, interpolate=True):
+    def __init__(self, cqt_config, width, height, log_scale=True, interpolate=True, convert2image=False):
         super(CQTSpectrogram, self).__init__()
         self.cqt = nnAudio.features.cqt.CQT(sr=cqt_config['sr'], hop_length=cqt_config['hop'], 
                                             fmin=cqt_config['fmin'], n_bins=cqt_config['n_bins'],
@@ -18,6 +19,7 @@ class CQTSpectrogram(nn.Module):
         self.height = height
         self.log_scale = log_scale
         self.interpolate = interpolate
+        self.convert2image = convert2image
         
     def forward(self, audio):
         # [1, 1, 176, 150]
@@ -28,17 +30,31 @@ class CQTSpectrogram(nn.Module):
         
         if self.log_scale:
           cqt = torch.log(torch.clamp(cqt, min=1e-7))
+
+        if self.convert2image:
+            device = cqt.device
+            cqt = cqt.cpu().numpy()[:, 0]
+            cqt = cqt - cqt.min(axis=(-1, -2), keepdims=True)
+            cqt /= (cqt.max(axis=(-1, -2), keepdims=True) + 1e-6)
+            cqt = (cqt * 255).astype('uint8')
+            b, h, w = cqt.shape
+            cqt = cqt.reshape(-1, w)
+            cqt = cv2.applyColorMap(cqt, cv2.COLORMAP_VIRIDIS).astype('float32') / 255.
+            cqt = cqt.reshape(-1, h, w, 3).transpose(0, 3, 1, 2)
+            cqt = torch.from_numpy(cqt).to(device)
+
         return cqt
 
 class Detector(nn.Module):
-    def __init__(self, cqt_config, width, height, anchor_num, load_param):
+    def __init__(self, cqt_config, width, height, anchor_num, load_param, convert2image=False):
         super(Detector, self).__init__()
 
-        self.cqt = CQTSpectrogram(cqt_config, width, height,)
+        self.cqt = CQTSpectrogram(cqt_config, width, height, convert2image=convert2image)
         out_depth = 72 # 决定fpn模块的通道
         stage_out_channels = [-1, 24, 48, 96, 192]
 
-        self.backbone = ShuffleNetV2(stage_out_channels, load_param)
+        in_channel = 3 if convert2image else 1
+        self.backbone = ShuffleNetV2(in_channel, stage_out_channels, load_param)
         self.fpn = LightFPN(stage_out_channels[-2] + stage_out_channels[-1], stage_out_channels[-1], out_depth)
 
         self.output_reg_layers = nn.Conv2d(out_depth, 4 * anchor_num, 1, 1, 0, bias=True)

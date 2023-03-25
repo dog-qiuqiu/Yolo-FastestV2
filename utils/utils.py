@@ -367,32 +367,40 @@ def evaluation(val_dataloader, cfg, model, device, conf_thres = 0.01, nms_thresh
     
     return metrics_output
 
-def dump_data(features, dump_dir, total_boxs=None, confs=None):
+def dump_data(features, dump_dir, total_boxs=None, confs=None, rgb=False):
 
     os.makedirs(dump_dir, exist_ok=True)
-    features = features[:, 0]
-    _, height, width = features.shape
+    height, width = features.shape[-2: ]
     resize_width, resize_height = width * 2, height * 2
     imgs = []
-    for index, feature in enumerate(features):
-        feature = cv2.resize(feature, (resize_width, resize_height))
-        feature = feature - feature.min()
-        feature /= (feature.max() + 1e-6)
-        feature = (feature * 255).astype('uint8')
-        img = cv2.applyColorMap(feature, cv2.COLORMAP_VIRIDIS)
+    for index, img in enumerate(features):
+        if rgb:
+            img = img.transpose(1, 2, 0)
+            if width < 300:
+                img = cv2.resize(img, (resize_width, resize_height))
+            img = (img * 255).astype('uint8')
+        else:
+            img = img[0]
+            if width < 300:
+                img = cv2.resize(img, (resize_width, resize_height))
+            img = img - img.min()
+            img /= (img.max() + 1e-6)
+            img = (img * 255).astype('uint8')
+            img = cv2.applyColorMap(img, cv2.COLORMAP_VIRIDIS)
         imgs.append(img)
 
     if not isinstance(total_boxs, list):
         total_boxs = total_boxs.tolist()
     total_boxs.sort(key=lambda x: (x[0], x[1]))
-
+    
+    height, width = imgs[0].shape[: -1]
     for index, (img_index, x0, y0, w, h) in enumerate(total_boxs):
         x1, y1 = max(0, x0 - w / 2), max(0, y0 - h / 2)
         x2, y2 = min(1, x0 + w / 2), max(1, y0 + h / 2)
-        x1 = int(x1 * resize_width)
-        y1 = int(y1 * resize_height)
-        x2 = int(x2 * resize_width)
-        y2 = int(y2 * resize_height) - 1
+        x1 = int(x1 * width)
+        y1 = int(y1 * height)
+        x2 = int(x2 * width)
+        y2 = int(y2 * height) - 1
         imgs[int(img_index)] = cv2.rectangle(imgs[int(img_index)], (x1, y1), (x2, y2), (0, 0, 255))
         if confs:
             imgs[int(img_index)] = cv2.putText(imgs[int(img_index)], '{:.2f}'.format(confs[index]), (x1, y1 - 5 if index % 2 == 0 else y1 + 12), 0, 0.4, (0, 0, 255))
@@ -400,7 +408,7 @@ def dump_data(features, dump_dir, total_boxs=None, confs=None):
     for index, img in enumerate(imgs):
         cv2.imwrite(os.path.join(dump_dir, 'cqt_{}.png'.format(index)), imgs[index])
 
-def dump_test_data(feature, dump_dir, total_notes, cqt_config):
+def dump_test_data(feature, dump_dir, total_notes, cqt_config, no=''):
 
     os.makedirs(dump_dir, exist_ok=True)
     height, width = feature.shape
@@ -413,14 +421,58 @@ def dump_test_data(feature, dump_dir, total_notes, cqt_config):
     time_length = width * cqt_config['hop'] / cqt_config['sr']
     n_bins = cqt_config['n_bins']
 
-    for onset, offset, pitch in total_notes:
+    for index, (onset, offset, pitch, conf) in enumerate(total_notes):
         x1 = int(onset * resize_width / time_length)
         x2 = int(offset * resize_width / time_length)
         y1 = int((pitch - 21) * cqt_config['bins_per_octave'] / 12 / n_bins * resize_height)
         y2 = resize_height - 1
         img = cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255))
+        img = cv2.putText(img, '{:.2f}'.format(conf), (x1, y1 - 5 if index % 2 == 0 else y1 + 12), 0, 0.4, (0, 0, 255))
 
-    cv2.imwrite(os.path.join(dump_dir, 'total_cqt.png'), img)
+    cv2.imwrite(os.path.join(dump_dir, 'total_cqt{}.png'.format(no)), img)
 
-def convert_boxs_to_notes():
-    pass
+def process_one_image_boxes(output_box):
+    if len(output_box) < 3:
+        return output_box
+    new_output_box = [output_box[0]]
+    for i in range(1, len(output_box) - 1):
+        if output_box[i][0] < output_box[i-1][2] and output_box[i][2] > output_box[i+1][0]:
+            continue
+        else:
+            new_output_box.append(output_box[i])
+    new_output_box.append(output_box[-1])
+    return new_output_box
+
+def convert_boxs_to_notes(output_boxes, hop, scale_h, scale_w, width):
+    notes = []
+    last_state = 0 # 0 for end 1 for open
+    last_pos = 0
+    for i, output_box in enumerate(output_boxes):
+        offset_pixel = hop * i
+        output_box = output_box.cpu().numpy().tolist()
+        output_box.sort(key=lambda x: x[0])
+        output_box = process_one_image_boxes(output_box)
+        
+        first = True
+        for j, (x1, y1, x2, y2, conf) in enumerate(output_box):
+            if x1 < last_pos - 12 and x2 < last_pos + 7:
+                continue
+            onset = (x1 + offset_pixel) * scale_w
+            offset = (x2 + offset_pixel) * scale_w
+            pitch = y1 * scale_h + 21.0
+            # 上一个音符open #或者 上一个音符open但是last_state有误
+            if first and last_state and x1 <= last_pos + 7:# or x1 < last_pos and x2 > last_pos):
+                # if len(notes) > 1 and notes[-1][0] < notes[-2][1]  and j > 0 and output_box[j][0] > output_box[j-1][2]:
+                #     notes[-1][0] = onset
+                notes[-1][1] = offset
+                notes[-1][2] = (notes[-1][2] + pitch) / 2
+                notes[-1][-1] = (notes[-1][-1] + conf) / 2
+                first = False
+            else:
+                notes.append([onset, offset, pitch, conf])
+
+            if j == len(output_box) - 1:
+                last_state = 0 if x2 < width - 4 else 1
+                last_pos = x2 - hop if x2 < width - 4 else x1 - hop
+            
+    return notes

@@ -64,7 +64,7 @@ class ShuffleV2Block(nn.Module):
         return x[0], x[1]
 
 class ShuffleNetV2(nn.Module):
-    def __init__(self, stage_out_channels, load_param):
+    def __init__(self, in_channel, stage_out_channels, load_param):
         super(ShuffleNetV2, self).__init__()
 
         self.stage_repeats = [4, 8, 4]
@@ -75,7 +75,7 @@ class ShuffleNetV2(nn.Module):
         # shufflenetv2开头已经降采样了两次
         # 用作降采样
         self.first_conv = nn.Sequential(
-            nn.Conv2d(1, input_channel, 3, 2, 1, bias=False),
+            nn.Conv2d(in_channel, input_channel, 3, 2, 1, bias=False),
             nn.BatchNorm2d(input_channel),
             nn.ReLU(inplace=True),
         )
@@ -100,7 +100,7 @@ class ShuffleNetV2(nn.Module):
         
         if load_param == True:
             print("load param...")
-            self._initialize_weights()
+            self._initialize_weights(in_channel)
 
     def forward(self, x): # [1, 1, 192, 160]
         x = self.first_conv(x) # [1, 24, 96, 80]
@@ -110,11 +110,23 @@ class ShuffleNetV2(nn.Module):
         C3 = self.stage4(C2) # [1, 192, 6, 5]
 
         return C2, C3
-
-    def _initialize_weights(self):
+    
+    # 部分参数加载方法参考 https://discuss.pytorch.org/t/how-to-load-part-of-pre-trained-model/1113/2
+    def _initialize_weights(self, in_channel):
         print("initialize_weights...")
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.load_state_dict(torch.load("./model/backbone/backbone.pth", map_location=device), strict = True)
+        pretrained_dict = torch.load("./model/backbone/backbone.pth", map_location=device)
+
+        if in_channel == 3:
+            self.load_state_dict(pretrained_dict, strict = True)
+        else:
+            # 1. filter out unnecessary keys
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if not k.startswith('first_conv')}
+            # 2. add the missing keys
+            model_dict = {k: v for k, v in self.state_dict().items() if k.startswith('first_conv')}
+            # 3. load the new state dict
+            self.load_state_dict({**pretrained_dict, **model_dict})
+
 
 if __name__ == "__main__":
     model = ShuffleNetV2()

@@ -26,8 +26,11 @@ if __name__ == '__main__':
 
     with open(args.config) as f:
         cfg = json.load(f)
-    model = model.detector.Detector(cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], 
-                                    cfg["m_config"]["anchor_num"], False).to(device)
+
+    model = model.detector.Detector(
+        cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], 
+        cfg["m_config"]["anchor_num"], False,
+        convert2image=cfg["m_config"]["convert2image"]).to(device)
     model.load_state_dict(torch.load(args.weights, map_location=device))
 
     #sets the module in eval node
@@ -39,7 +42,7 @@ if __name__ == '__main__':
     w = int(cfg["cqt"]["duration"] * cfg["cqt"]["sr"] / cfg["cqt"]["hop"])
 
     scale_h, scale_w = h / cfg["m_config"]["height"], w / cfg["m_config"]["width"]
-    filepaths = [os.path.join(args.testdir, file) for file in os.listdir(args.testdir)][1:2]
+    filepaths = [os.path.join(args.testdir, file) for file in os.listdir(args.testdir)][1: ]
 
     for filepath in filepaths:
         print(filepath)
@@ -89,6 +92,6 @@ if __name__ == '__main__':
                 total_notes.append(notes)
 
             if cfg["test"]["test_checkdata_dir"]:
-                utils.utils.dump_data(cqt.cpu().numpy(), cfg["test"]["test_checkdata_dir"],
-                                      np.array(total_boxs), confs)
+                utils.utils.dump_data(cqt.cpu().numpy(), cfg["test"]["test_checkdata_dir"],np.array(total_boxs), 
+                                      confs, rgb=cfg["m_config"]["convert2image"])
                 exit(0)

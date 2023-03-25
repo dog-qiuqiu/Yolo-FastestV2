@@ -18,18 +18,19 @@
     "learning_rate": 0.001
   },
   "m_config": {
-    "pre_weights": null,
+    "convert2image": false,
+    "pre_weights": true,
     "height": 192,
-    "width": 160,
-    "anchor_num": 3,
-    "anchors": [[8.89,101.38], [14.74,99.00], [20.48,102.73], [30.51,97.87], [48.23,101.96], [85.70,105.78]]
+    "width": 352,
+    "anchor_num": 3, 
+    "anchors": [[21.16,101.28], [36.73,93.40], [42.12,114.95], [64.12,97.23], [104.08,101.72], [186.69,105.75]]
   },
   "dataset_dir" : "/home/data/SSVD-v2.0",
   "datadump_dir" : "/home/data/wxk/tmp_ssvd_2",
   "checkdata_dir": null,
   "test": {
-    "test_checkdata_dir": "_test_check",
+    "test_checkdata_dir": "test_check",
     "overlap_ratio": 0.7
   },
-  "save_dir": "/home/data/wxk/tmp_musicyolo_model/initial"
+  "save_dir": "/home/data/wxk/tmp_musicyolo_model/image192x352cqt_input_pretrain"
 }
