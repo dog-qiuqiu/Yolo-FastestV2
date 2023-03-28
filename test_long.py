@@ -1,12 +1,10 @@
 import os
 import argparse
-
 import torch
 import model.detector
 import utils.utils
 import utils.datasets
 import json
-import numpy as np
 
 if __name__ == '__main__':
     #指定训练配置文件

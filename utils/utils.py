@@ -269,7 +269,7 @@ def non_max_suppression(prediction, conf_thres=0.3, iou_thres=0.45):
 
     return output
 
-def make_grid(h, w, cfg, device):
+def make_grid(h, w, cfg, device="cpu"):
     hv, wv = torch.meshgrid([torch.arange(h), torch.arange(w)])
     return torch.stack((wv, hv), 2).repeat(1,1,3).reshape(h, w, cfg["m_config"]["anchor_num"], -1).to(device)
 
@@ -286,7 +286,7 @@ def handel_preds(preds, cfg, device):
         reg_preds = preds[i * 2]
         obj_preds = preds[(i * 2) + 1]
 
-        for index, r, o in zip(range(len(reg_preds)), reg_preds, obj_preds):
+        for index, r, o in zip(range(len(reg_preds)), reg_preds, obj_preds): # 在batch维度循环
             # [12, 10, 12]
             r = r.permute(1, 2, 0)
             # [12, 10, 3, 4]
@@ -312,6 +312,56 @@ def handel_preds(preds, cfg, device):
 
             #计算obj分数
             anchor_boxes[:, :, :, 4] = o[:, :, :, 0].sigmoid()
+
+            #torch tensor 转为 numpy array
+            anchor_boxes = anchor_boxes.cpu().detach().numpy() 
+            batch_bboxes.append(anchor_boxes)     
+
+        #n, anchor num, h, w, box => n, (anchor num*h*w), box
+        batch_bboxes = torch.from_numpy(np.array(batch_bboxes)) # [128, 12, 10, 3, 5]
+        batch_bboxes = batch_bboxes.view(batch_bboxes.shape[0], -1, batch_bboxes.shape[-1]) # [128, 360, 5]
+
+        output_bboxes.append(batch_bboxes)    
+        
+    #merge 两个特征图上的检测结果合并，其中第一个图预测结果更多，因为尺寸更大
+    output = torch.cat(output_bboxes, 1) # [128, 450, 5]
+            
+    return output
+
+#特征图后处理trt
+def handel_preds_trt(preds, cfg):
+    #加载anchor配置
+    anchors = np.array(cfg["m_config"]["anchors"])
+    # [2, 3, 2]
+    anchors = torch.from_numpy(anchors.reshape(len(preds), cfg["m_config"]["anchor_num"], 2))
+    output_bboxes = []
+
+    for i in range(len(preds)): # 0~2
+        batch_bboxes = []
+        reg_preds = preds[i][..., :12]
+        obj_preds = preds[i][..., 12: ]
+
+        for index, r, o in zip(range(len(reg_preds)), reg_preds, obj_preds): # 在batch维度循环
+            # [12, 10, 3, 4]
+            r = r.reshape(r.shape[0], r.shape[1], cfg["m_config"]["anchor_num"], -1)
+            # [12, 10, 3, 1]
+            o = o.reshape(o.shape[0], o.shape[1], cfg["m_config"]["anchor_num"], -1)
+
+            # [12, 10, 3, 5] # 前两个为高和宽的尺寸,第三个为anchor_num, 最后为xywh+conf
+            anchor_boxes = torch.zeros(r.shape[0], r.shape[1], r.shape[2], r.shape[3] + 1)
+
+            #计算anchor box的cx, cy
+            # [12, 10, 3, 2]
+            grid = make_grid(r.shape[0], r.shape[1], cfg)
+            stride = cfg["m_config"]["height"] /  r.shape[0] # value 16.0 or 32.0
+            anchor_boxes[:, :, :, :2] = ((r[:, :, :, :2]* 2. - 0.5) + grid) * stride
+
+            #计算anchor box的w, h
+            anchors_cfg = anchors[i]
+            anchor_boxes[:, :, :, 2:4] = (r[:, :, :, 2:4] * 2) ** 2 * anchors_cfg # wh
+
+            #计算obj分数
+            anchor_boxes[:, :, :, 4] = o[:, :, :, 0]
 
             #torch tensor 转为 numpy array
             anchor_boxes = anchor_boxes.cpu().detach().numpy() 

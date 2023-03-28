@@ -46,7 +46,8 @@ class CQTSpectrogram(nn.Module):
         return cqt
 
 class Detector(nn.Module):
-    def __init__(self, cqt_config, width, height, anchor_num, load_param, convert2image=False):
+    def __init__(self, cqt_config, width, height, anchor_num, load_param, convert2image=False,
+                 export_onnx=False):
         super(Detector, self).__init__()
 
         self.cqt = CQTSpectrogram(cqt_config, width, height, convert2image=convert2image)
@@ -59,6 +60,7 @@ class Detector(nn.Module):
 
         self.output_reg_layers = nn.Conv2d(out_depth, 4 * anchor_num, 1, 1, 0, bias=True)
         self.output_obj_layers = nn.Conv2d(out_depth, anchor_num, 1, 1, 0, bias=True)
+        self.export_onnx = export_onnx
 
     def forward(self, audio): # [1, 80448]
         # [1, 1, 192, 160]
@@ -77,30 +79,54 @@ class Detector(nn.Module):
         # [1, 3, 6, 5]
         out_obj_3 = self.output_obj_layers(obj_3)
 
+        if self.export_onnx:
+            out_reg_2 = out_reg_2.sigmoid()
+            out_obj_2 = out_obj_2.sigmoid()
+
+            out_reg_3 = out_reg_3.sigmoid()
+            out_obj_3 = out_obj_3.sigmoid()
+
+            print("export onnx ...")
+            return torch.cat((out_reg_2, out_obj_2), 1).permute(0, 2, 3, 1), \
+                   torch.cat((out_reg_3, out_obj_3), 1).permute(0, 2, 3, 1)
+
         return out_reg_2, out_obj_2, out_reg_3, out_obj_3, cqt
 
 if __name__ == "__main__":
-    # test_data = torch.rand(1, 1, 192, 160)
-    cqt_config = {
-        "sr": 16000,
-        "fmin": 27.5,
-        "hop": 320,
-        "bins_per_octave": 24,
-        "n_bins": 176,
-        "overlap_ratio": 0.5,
-        "duration": 3.0
-    }
-    width = 160
-    height = 192
-    model = Detector(cqt_config,width, height, 3, False)
+
+    import argparse
+    import json
+    import onnx
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", "-c", type=str, default="",
+                        help="Specify training config")
+    parser.add_argument("--weight", "-w", type=str, default="",
+                        help="Specify weight path")
+    args = parser.parse_args()
+
+    with open(args.config) as f:
+        cfg = json.load(f)
+
+    device = 'cpu'
+    model = Detector(
+        cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], 
+        cfg["m_config"]["anchor_num"], False, 
+        convert2image=cfg["m_config"]["convert2image"], export_onnx=True).to(device)
+    model.load_state_dict(torch.load(args.weight, map_location=device))
+    model.eval()
     test_data = torch.rand(1, 80448)
     model(test_data)
-    torch.onnx.export(model,                    #model being run
-                     test_data,                 # model input (or a tuple for multiple inputs)
-                     "test.onnx",               # where to save the model (can be a file or file-like object)
-                     export_params=True,        # store the trained parameter weights inside the model file
-                     opset_version=11,          # the ONNX version to export the model to
-                     do_constant_folding=True)  # whether to execute constant folding for optimization
-    
+    torch.onnx.export(model,                     # model being run
+                      test_data,                 # model input (or a tuple for multiple inputs)
+                     "musicyolo.onnx",           # where to save the model (can be a file or file-like object)
+                      export_params=True,        # store the trained parameter weights inside the model file
+                      opset_version=11,          # the ONNX version to export the model to
+                      do_constant_folding=True,  # whether to execute constant folding for optimization
+                      input_names=["audio16k80448"], 
+                      output_names=["output0", "output1"])
+    onnx_model = onnx.load("musicyolo.onnx")
+    onnx.checker.check_model(onnx_model)
+
+    # onnx to tensorRT ./trtexec --onnx="/home/data/wxk/Yolo-FastestV2/model/musicyolo-opt.onnx" --saveEngine="/home/data/wxk/Yolo-FastestV2/model/musicyolo-opt.trt"  
 
 
