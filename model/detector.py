@@ -7,6 +7,7 @@ from model.fpn import *
 from model.backbone.shufflenetv2 import *
 import nnAudio.features
 import cv2
+from utils.utils import do_mixup
 
 class CQTSpectrogram(nn.Module):
     def __init__(self, cqt_config, width, height, log_scale=True, interpolate=True, convert2image=False):
@@ -62,9 +63,12 @@ class Detector(nn.Module):
         self.output_obj_layers = nn.Conv2d(out_depth, anchor_num, 1, 1, 0, bias=True)
         self.export_onnx = export_onnx
 
-    def forward(self, audio): # [1, 80448]
+    def forward(self, audio, mixup_lambda=None): # [1, 80448]
         # [1, 1, 192, 160]
         cqt = self.cqt(audio)
+        # mixup数据增强
+        if mixup_lambda is not None:
+            cqt = do_mixup(cqt, mixup_lambda)
         C2, C3 = self.backbone(cqt) # [1, 96, 12, 10] [1, 192, 6, 5] # 已经是shufflenetv2第三阶段和第四阶段输出
         # [1, 72, 72, 10] x2 [1, 72, 6, 5] x2
         obj_2, reg_2, obj_3, reg_3 = self.fpn(C2, C3)

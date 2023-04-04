@@ -6,6 +6,11 @@ import utils.utils
 import utils.datasets
 import json
 
+def write(savepath, notes):
+    with open(savepath, 'w') as f:
+        for onset, offset, pitch, _ in notes:
+            f.write('{:.3f}\t{:.3f}\t{:.3f}\n'.format(onset, offset, pitch))
+
 if __name__ == '__main__':
     #指定训练配置文件
     parser = argparse.ArgumentParser()
@@ -39,6 +44,11 @@ if __name__ == '__main__':
     batch_size = 128
     filepaths = [os.path.join(args.testdir, file) for file in os.listdir(args.testdir)]
 
+    dumpdir = cfg["test"]["test_checkdata_dir"]
+    note_save_dir = os.path.join(dumpdir, 'res')
+    os.makedirs(dumpdir, exist_ok=True)
+    os.makedirs(note_save_dir, exist_ok=True)
+
     for fileno, filepath in enumerate(filepaths):
         cfg["cqt"]["overlap_ratio"] = cfg["test"]["overlap_ratio"]
         testset = utils.datasets.TestDataset(cfg["cqt"], filepath)
@@ -69,7 +79,10 @@ if __name__ == '__main__':
         total_notes.sort(key=lambda x: x[0])
         print(filepath)
         feature = cqt_transform(testset.get_total_audio())[0, 0].numpy()
+        basename = os.path.basename(filepath).split('.')[0]
+        write(os.path.join(note_save_dir, basename + '.txt'), total_notes)
 
-        if cfg["test"]["test_checkdata_dir"]:
-            utils.utils.dump_test_data(feature, cfg["test"]["test_checkdata_dir"], total_notes, cfg["cqt"], no=str(fileno))
+        if dumpdir:
+            dumppath = os.path.join(dumpdir, basename + '.png')
+            utils.utils.dump_test_data(feature, dumppath, total_notes, cfg["cqt"], no=str(fileno))
             # exit(0)

@@ -44,6 +44,8 @@ if __name__ == '__main__':
     scale_h, scale_w = h / cfg["m_config"]["height"], w / cfg["m_config"]["width"]
     filepaths = [os.path.join(args.testdir, file) for file in os.listdir(args.testdir)][1: ]
 
+    filepaths = ['/home/data/SSVD-v2.0/test16k/65924.wav']
+
     for filepath in filepaths:
         print(filepath)
         cfg["cqt"]["overlap_ratio"] = cfg["test"]["overlap_ratio"]

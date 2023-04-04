@@ -6,13 +6,19 @@ import torch
 from torch import optim
 import json
 from torchsummary import summary
+import numpy as np
 
 import utils.loss
 import utils.utils
 import utils.datasets
 import model.detector
+from utils.utils import Mixup, do_targets_mixup
 
 
+# 尝试了使用mixup数据增强方法，效果基本没有变化
+# 数据增强方法参考 https://www.cnblogs.com/LXP-Never/p/13404523.html
+# 相关噪声数据集参考 https://www.zhihu.com/question/278918708
+# TUT数据集 https://zenodo.org/record/400515#.ZCwYYHZBxD8
 if __name__ == "__main__":
     # 指定训练配置文件
     parser = argparse.ArgumentParser()
@@ -32,21 +38,17 @@ if __name__ == "__main__":
     label_dir = os.path.join(dataset_dir, "label")
     train_dir = os.path.join(datadump_dir, "train")
     valid_dir = os.path.join(datadump_dir, "valid")
-    train_dataset = utils.datasets.TensorDataset(cfg["cqt"], label_dir, train_dir, cfg["min_duration"], aug = False)
-    val_dataset = utils.datasets.TensorDataset(cfg["cqt"], label_dir, valid_dir, cfg["min_duration"], aug = False)
 
     batch_size = int(cfg["opt"]["batch_size"] / cfg["opt"]["subdivisions"])
+    batch_size = batch_size * 2 if cfg["opt"]["mixup"] else batch_size
     nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
-    # 训练集
-    train_dataloader = torch.utils.data.DataLoader(train_dataset,
-                                                   batch_size=batch_size,
-                                                   shuffle=True,
-                                                   num_workers=nw,
-                                                   drop_last=True,
-                                                   collate_fn=utils.datasets.collate_fn,
-                                                   persistent_workers=True
-                                                   )
+    overlap_ratio_min, overlap_ratio_max = cfg["cqt"]["overlap_ratios"]
+    overlap_ratios = np.linspace(start=overlap_ratio_min, stop=overlap_ratio_max, 
+                                 num=int((overlap_ratio_max-overlap_ratio_min)/0.1)+1)
+    cfg["cqt"]["overlap_ratio"] = (overlap_ratio_min + overlap_ratio_max) / 2
+    
     #验证集
+    val_dataset = utils.datasets.TensorDataset(cfg["cqt"], label_dir, valid_dir, cfg["min_duration"], aug = False)
     val_dataloader = torch.utils.data.DataLoader(val_dataset,
                                                  batch_size=batch_size,
                                                  shuffle=False,
@@ -92,10 +94,25 @@ if __name__ == "__main__":
     os.makedirs(weights_dir, exist_ok=True)
 
     print("Starting training for %g epochs..." % cfg["opt"]["epochs"])
+    
+    if cfg['opt']['mixup']:
+        mixup_augmenter = Mixup(mixup_alpha=1.)
 
     batch_num = 0
-    for epoch in range(cfg["opt"]["epochs"]):
+    for epoch_index in range(cfg["opt"]["epochs"]):
+        epoch = epoch_index + 1
         model.train()
+        # 训练集
+        cfg["cqt"]["overlap_ratio"] = overlap_ratios[epoch_index % len(overlap_ratios)]
+        train_dataset = utils.datasets.TensorDataset(cfg["cqt"], label_dir, train_dir, cfg["min_duration"], aug = False)
+        train_dataloader = torch.utils.data.DataLoader(train_dataset,
+                                                       batch_size=batch_size,
+                                                       shuffle=True,
+                                                       num_workers=nw,
+                                                       drop_last=True,
+                                                       collate_fn=utils.datasets.collate_fn,
+                                                       persistent_workers=True
+                                                       )
         pbar = tqdm(train_dataloader)
 
         for audios, targets in pbar:
@@ -103,13 +120,18 @@ if __name__ == "__main__":
             audios = audios.to(device)
             targets = targets.to(device)
 
-            # 模型推理
-            preds = model(audios)
-            cqt = preds[-1]
+            if cfg['opt']['mixup']:
+                mixup_lambda = mixup_augmenter.get_lambda(batch_size=len(audios))
+                preds = model(audios, mixup_lambda)
+                targets = do_targets_mixup(targets, mixup_lambda)
 
-            preds = preds[: -1]
+            else:
+                # 模型推理
+                preds = model(audios)
+            
+            cqt, preds = preds[-1], preds[: -1]
             # 数据检查
-            if cfg["checkdata_dir"]:
+            if cfg["checkdata_dir"] and not cfg['opt']['mixup']:
                 utils.utils.dump_data(cqt.detach().cpu().numpy(), os.path.join(cfg["checkdata_dir"], str(batch_num)), 
                                       targets.detach().cpu().numpy(), rgb=cfg["m_config"]["convert2image"])
                 if batch_num == 0:
@@ -141,7 +163,7 @@ if __name__ == "__main__":
             batch_num += 1
 
         # 模型保存
-        if epoch % 50 == 0 and epoch > 0:
+        if epoch % 50 == 0 and epoch_index > 0:
             model.eval()
             #模型评估
             print("computer mAP...") # 使用很低的conf_thres看看模型是否能够能预测出来合适的box

@@ -69,7 +69,7 @@ def build_target(preds, targets, cfg, device):
     # (3, 1005)  # value [0, 1, 2]  repeat(*size) 在每个维度分别repeat，并且在前者基础上进行
     # at可以理解为anchor_targets
     at = torch.arange(anchor_num, device = device).float().view(anchor_num, 1).repeat(1, label_num)
-    # (3, 1005, 6) # 前5列为框需要和x0, y0, w, h 最后一列为at
+    # (3, 1005, 6) # 前5列为框序号和x0, y0, w, h 最后一列为at
     targets = torch.cat((targets.repeat(anchor_num, 1, 1), at[:, :, None]), 2)
 
     g = 0.5  # bias
@@ -139,7 +139,7 @@ yolov5算法的解析 https://zhuanlan.zhihu.com/p/609264977
 '''
 def compute_loss(preds, targets, cfg, device):
     # preds [128, 12, 12, 10] x 2 [128, 12, 6, 5] x 2 targets [1005, 5]
-    balance = [1.0, 2.0]
+    balance = [1.0, 1.0]
 
     ft = torch.cuda.FloatTensor if preds[0].is_cuda else torch.Tensor
     lbox, lobj = ft([0]), ft([0])

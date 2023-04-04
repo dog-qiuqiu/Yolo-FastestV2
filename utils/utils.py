@@ -458,9 +458,8 @@ def dump_data(features, dump_dir, total_boxs=None, confs=None, rgb=False):
     for index, img in enumerate(imgs):
         cv2.imwrite(os.path.join(dump_dir, 'cqt_{}.png'.format(index)), imgs[index])
 
-def dump_test_data(feature, dump_dir, total_notes, cqt_config, no=''):
+def dump_test_data(feature, dumppath, total_notes, cqt_config, no=''):
 
-    os.makedirs(dump_dir, exist_ok=True)
     height, width = feature.shape
     resize_width, resize_height = width * 2, height * 2
     feature = cv2.resize(feature, (resize_width, resize_height))
@@ -479,7 +478,7 @@ def dump_test_data(feature, dump_dir, total_notes, cqt_config, no=''):
         img = cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255))
         img = cv2.putText(img, '{:.2f}'.format(conf), (x1, y1 - 5 if index % 2 == 0 else y1 + 12), 0, 0.4, (0, 0, 255))
 
-    cv2.imwrite(os.path.join(dump_dir, 'total_cqt{}.png'.format(no)), img)
+    cv2.imwrite(dumppath, img)
 
 def process_one_image_boxes(output_box):
     if len(output_box) < 3:
@@ -526,3 +525,49 @@ def convert_boxs_to_notes(output_boxes, hop, scale_h, scale_w, width):
                 last_pos = x2 - hop if x2 < width - 4 else x1 - hop
             
     return notes
+
+class Mixup(object):
+    def __init__(self, mixup_alpha, random_seed=1234):
+        """Mixup coefficient generator.
+        """
+        self.mixup_alpha = mixup_alpha
+        self.random_state = np.random.RandomState(random_seed)
+
+    def get_lambda(self, batch_size):
+        """Get mixup random coefficients.
+        Args:
+          batch_size: int
+        Returns:
+          mixup_lambdas: (batch_size,)
+        """
+        mixup_lambdas = []
+        for _ in range(0, batch_size, 2):
+            lam = self.random_state.beta(self.mixup_alpha, self.mixup_alpha, 1)[0]
+            mixup_lambdas.append(lam)
+            mixup_lambdas.append(1. - lam)
+
+        return np.array(mixup_lambdas, dtype='float32')
+
+def do_mixup(x, mixup_lambda):
+    """Mixup x of even indexes (0, 2, 4, ...) with x of odd indexes 
+    (1, 3, 5, ...).
+    Args:
+      x: (batch_size * 2, ...)
+      mixup_lambda: (batch_size * 2,)
+    Returns:
+      out: (batch_size, ...)
+    """
+    mixup_lambda = torch.from_numpy(mixup_lambda).to(x.device)
+    out = (x[0 :: 2].transpose(0, -1) * mixup_lambda[0 :: 2] + \
+        x[1 :: 2].transpose(0, -1) * mixup_lambda[1 :: 2]).transpose(0, -1)
+    return out
+
+def do_targets_mixup(targets, mixup_lambda):
+    outs = []
+    _targets = targets.clone()
+    for target in _targets:
+        if mixup_lambda[int(target[0])] > 0.3:
+            target[0] = int(target[0]) // 2
+            outs.append(target)
+    outs = torch.stack(outs, 0)
+    return outs
