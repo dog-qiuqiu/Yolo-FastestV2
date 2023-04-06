@@ -7,3 +7,4 @@ data/voc.names
 *.pyc
 *_check*
 *.onnx
+__**
