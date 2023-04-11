@@ -10,10 +10,42 @@
 
 // 参考代码 https://github.com/cyrusbehr/tensorrt-cpp-api/blob/main/src/engine.h
 
+class TargetBox
+{
+private:
+    float getWidth() { return (x2 - x1); };
+    float getHeight() { return (y2 - y1); };
+
+public:
+    float x1;
+    float y1;
+    float x2;
+    float y2;
+    float score;
+
+    float area() { return getWidth() * getHeight(); };
+};
+
+class Note
+{
+public:
+    Note(float on, float off, float p, float s): onset(on), offset(off), pitch(p), score(s) {}
+    float onset;
+    float offset;
+    float pitch;
+    float score;
+};
+
 // Precision used for GPU inference
 enum class Precision {
     FP32,
     FP16
+};
+
+// Note state for open and close
+enum class NoteSate {
+    CLOSE,
+    OPEN
 };
 
 // Options for the network
@@ -47,12 +79,11 @@ public:
     // Load and prepare the network for inference
     bool loadNetwork();
     // Run inference.
-    bool runInference(const std::vector<cv::cuda::GpuMat>& inputs, std::vector<std::vector<std::vector<float>>>& featureVectors);
+    bool runInference(const std::vector<int16_t> &input, std::vector<std::vector<std::vector<float>>>& featureVectors);
+    std::vector<Note> inferPiece(const std::vector<int16_t>& audio, int win, int hop);
 
     int32_t getInputLength() const { return m_inputL; };
 
-    // Utility method
-    static cv::cuda::GpuMat resizeKeepAspectRatioPadRightBottom(const cv::cuda::GpuMat& input, size_t newDim, const cv::Scalar& bgcolor = cv::Scalar(0, 0, 0));
 private:
     // Converts the engine options into a string
     std::string serializeEngineOptions(const Options& options);
@@ -71,9 +102,25 @@ private:
     Logger m_logger;
     std::string m_engineName;
 
-    int32_t m_inputL = 0;
+    int32_t m_inputL;
 
     inline void checkCudaErrorCode(cudaError_t code);
+
+    int predHandle(const std::vector<std::vector<float>> &out, std::vector<TargetBox> &dstBoxes, 
+                   const float scaleW, const float scaleH, const float thresh);
+    int nmsHandle(std::vector<TargetBox> &tmpBoxes, std::vector<TargetBox> &dstBoxes, float nmsThresh);
+
+    int inputWidth;
+    int inputHeight;
+    float scaleH;
+    float scaleW;
+    int hop;
+    int n_fft;
+    float confThresh;
+    float nmsThresh;
+    int numAnchor;
+    std::vector<int> outdims;
+    std::vector<float> anchor;
 };
 
 #endif

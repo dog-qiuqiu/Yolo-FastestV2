@@ -1,9 +1,6 @@
 import time
-
 import torch
 import torchvision
-import torch.nn.functional as F
-
 import os, time
 import numpy as np
 from tqdm import tqdm
@@ -232,7 +229,6 @@ def non_max_suppression(prediction, conf_thres=0.3, iou_thres=0.45):
 
     t = time.time()
     output = [torch.zeros((0, 5), device="cpu")] * prediction.shape[0] # shape [0, 5] x 128 0位置让这个维度可以放任意维度的矩阵
-
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         x = x[x[..., 4] > conf_thres]  # confidence
@@ -458,7 +454,7 @@ def dump_data(features, dump_dir, total_boxs=None, confs=None, rgb=False):
     for index, img in enumerate(imgs):
         cv2.imwrite(os.path.join(dump_dir, 'cqt_{}.png'.format(index)), imgs[index])
 
-def dump_test_data(feature, dumppath, total_notes, cqt_config, no=''):
+def dump_test_data(feature, dumppath, total_notes, cqt_config):
 
     height, width = feature.shape
     resize_width, resize_height = width * 2, height * 2

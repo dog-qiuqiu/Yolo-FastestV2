@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.20.5)
+# set(CMAKE_C_COMPILER /home/wxk/gcc/gcc/bin/gcc)
+# set(CMAKE_CXX_COMPILER /home/wxk/gcc/gcc/bin/g++)
 
 project(test)
 
@@ -7,7 +9,6 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_BUILD_TYPE Debug)
 
 find_package(CUDA REQUIRED)
-find_package(OpenCV REQUIRED)
 
 # 引入非标准的头文件搜索路径
 include_directories(/home/wxk/tensorrt/tensorrt/include/)
@@ -21,4 +22,3 @@ target_link_libraries(test nvinfer)
 target_link_libraries(test cudart)
 target_link_libraries(test nvonnxparser)
 target_link_libraries(test nvparsers)
-target_link_libraries(test ${OpenCV_LIBS})

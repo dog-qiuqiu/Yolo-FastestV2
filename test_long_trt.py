@@ -10,8 +10,16 @@ import utils.datasets
 import json
 import numpy as np
 import torch
+import numpy as np
+import struct
 
 # int8量化参考代码 https://blog.csdn.net/oYeZhou/article/details/106719154
+def unpack_data(binpath):
+    nums = int(os.path.getsize(binpath)/4)
+    with open(binpath, 'rb') as f:
+        data = struct.unpack('f'*nums, f.read(4*nums))
+    data = torch.tensor(data)
+    return data
 
 if __name__ == '__main__':
     #指定训练配置文件
@@ -19,7 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('--config', '-c', type=str, default='', 
                         help='Specify config')
     parser.add_argument('--weights', '-w', type=str, default='', 
-                        help='The path of the .pth model to be transformed')
+                        help='The path of the .trt model to be transformed')
     parser.add_argument('--testdir','-t', type=str, default='', 
                         help='The path of test data')
 
@@ -70,7 +78,8 @@ if __name__ == '__main__':
     batch_size = int(cfg["opt"]["batch_size"] / cfg["opt"]["subdivisions"])
     nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
     batch_size = 1
-    filepaths = [os.path.join(args.testdir, file) for file in os.listdir(args.testdir)]
+    # filepaths = [os.path.join(args.testdir, file) for file in os.listdir(args.testdir)]
+    filepaths = ["/home/data/SSVD-v2.0/test16k/100135.wav"]
 
     #模型加载
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -87,7 +96,10 @@ if __name__ == '__main__':
                                              )
         output_boxes = []
         for index, data in enumerate(loader): # [6, 80448] 等效于多张频谱图
-            data = data.numpy()
+            data1 = data.numpy()
+            # data2 = unpack_data('/home/data/wxk/Yolo-FastestV2/sample/tensorrt/build/cqt.bin').numpy()
+            data = data1
+
             preds = predict(data)
             preds = [torch.from_numpy(x) for x in preds]
 
@@ -102,9 +114,10 @@ if __name__ == '__main__':
         hop = (1. - cfg["cqt"]["overlap_ratio"]) * cfg["m_config"]["width"]
         total_notes = utils.utils.convert_boxs_to_notes(output_boxes, hop, scale_h, scale_w, cfg["m_config"]["width"])
         total_notes.sort(key=lambda x: x[0])
-        print(filepath)
         feature = cqt_transform(testset.get_total_audio())[0, 0].numpy()
 
         if cfg["test"]["test_checkdata_dir"]:
-            utils.utils.dump_test_data(feature, cfg["test"]["test_checkdata_dir"], total_notes, cfg["cqt"], no=str(fileno))
-            # exit(0)
+            os.makedirs(cfg["test"]["test_checkdata_dir"], exist_ok=True)
+            dumppath = os.path.join(cfg["test"]["test_checkdata_dir"], os.path.basename(filepath).split('.')[0] + '.png')
+            utils.utils.dump_test_data(feature, dumppath, total_notes, cfg["cqt"])
+            exit(0)

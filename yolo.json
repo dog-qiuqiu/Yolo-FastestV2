@@ -9,6 +9,8 @@
     "overlap_ratios": [0.1, 0.9],
     "duration": 3.0
   },
+  "noise_dir": "/home/data/wxk/TUTDataset/TUT-acoustic-scenes-2017-development/home/",
+  "data_num": 800,
   "min_duration": 0.1,
   "opt": {
     "epochs": 400,
@@ -16,7 +18,7 @@
     "batch_size": 8,
     "subdivisions": 1,
     "learning_rate": 0.001,
-    "mixup": true
+    "mixup": false
   },
   "m_config": {
     "convert2image": false,
@@ -33,5 +35,5 @@
     "test_checkdata_dir": "test_check",
     "overlap_ratio": 0.5
   },
-  "save_dir": "/home/data/wxk/tmp_musicyolo_model/image192x352cqt_input_pretrain_overlap0.1-0.9-batch8-mixup"
+  "save_dir": "/home/data/wxk/tmp_musicyolo_model/image192x352cqt_input_pretrain_overlap0.1-0.9-batch8-addnoise"
 }

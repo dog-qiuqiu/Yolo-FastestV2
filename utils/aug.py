@@ -10,6 +10,7 @@ import unittest
 import os
 import io
 from subprocess import Popen, PIPE
+import sys
 
 # 时域增强方法在cpu进行，频域增强在gpu上进行
 class Augmentor(object):
@@ -19,7 +20,7 @@ class Augmentor(object):
 
   def snr2noise(self, clean, noise, SNR):
     p_clean = np.mean(clean ** 2)
-    p_noise = np.mean(noise)
+    p_noise = np.mean(noise ** 2)
     scalar = np.sqrt(p_clean / (10 ** (SNR / 10)) / (p_noise + np.finfo(np.float32).eps))
     noisy = clean + scalar * noise
     return noisy, scalar
@@ -59,7 +60,7 @@ class Augmentor(object):
     # with open('testin.wav', 'wb') as f:
     #   f.write(wav)
   
-    p = Popen("ffmpeg -y -f wav -ac 1 -channel_layout mono -i - -filter_complex \
+    p = Popen("ffmpeg -loglevel quiet -y -f wav -ac 1 -channel_layout mono -i - -filter_complex \
               'atempo=tempo={:.2f}' -f wav -ar {} -ac 1 -".format(speed, self.sr),
                stdin=PIPE, stdout=PIPE, shell=True)
     out = p.communicate(wav)[0]
@@ -75,8 +76,7 @@ class Augmentor(object):
     byte_io.seek(0)
     wav = byte_io.read()
     # sf.write('testin.wav', np.frombuffer(wav, dtype='float32'), self.sr)
-  
-    p = Popen("ffmpeg -y -f f32le -ar {} -ac 1 -channel_layout mono -i - -filter_complex \
+    p = Popen("ffmpeg -loglevel quiet -y -f f32le -ar {} -ac 1 -channel_layout mono -i - -filter_complex \
               'atempo=tempo={:.2f}' -f f32le -ar {} -".format(self.sr, speed, self.sr),
                stdin=PIPE, stdout=PIPE, shell=True)
     wav = p.communicate(wav)[0]
@@ -90,7 +90,8 @@ class Augmentor(object):
   
   # 变速不变调
   def adjust_speed(self, wav, speed):
-    return self._memtmpfs_adjust_speed_raw(wav, speed)
+    value = self._memtmpfs_adjust_speed_wav(wav, speed)
+    return value
 
 
 class TestAugmentor(unittest.TestCase):
@@ -110,7 +111,7 @@ class TestAugmentor(unittest.TestCase):
 
   # 信噪比[5, 15] 需要尝试
   def test_snr2noise(self):
-    SNR = 5
+    SNR = 10
     noisy, _ = self.augmentor.snr2noise(self.wav, self.noise, SNR)
     if noisy.max() > 1.0:
       factor = 1. / (noisy.max() + 1e-7)
@@ -119,9 +120,9 @@ class TestAugmentor(unittest.TestCase):
     noise = noisy - wav
 
     os.makedirs('snr2noise', exist_ok=True)
-    sf.write('snr2noise/noisy.wav', noisy, self.sr)
-    sf.write('snr2noise/clean.wav', wav, self.sr)
-    sf.write('snr2noise/noise.wav', noise, self.sr)
+    sf.write('snr2noise/noisy10.wav', noisy, self.sr)
+    sf.write('snr2noise/clean10.wav', wav, self.sr)
+    sf.write('snr2noise/noise10.wav', noise, self.sr)
 
   # 可以设置volume [0.2, 1] 需要测试
   def test_volumeAu(self):

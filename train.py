@@ -48,7 +48,7 @@ if __name__ == "__main__":
     cfg["cqt"]["overlap_ratio"] = (overlap_ratio_min + overlap_ratio_max) / 2
     
     #验证集
-    val_dataset = utils.datasets.TensorDataset(cfg["cqt"], label_dir, valid_dir, cfg["min_duration"], aug = False)
+    val_dataset = utils.datasets.TensorDataset(cfg["cqt"], label_dir, valid_dir, cfg["min_duration"], aug=False)
     val_dataloader = torch.utils.data.DataLoader(val_dataset,
                                                  batch_size=batch_size,
                                                  shuffle=False,
@@ -104,7 +104,9 @@ if __name__ == "__main__":
         model.train()
         # 训练集
         cfg["cqt"]["overlap_ratio"] = overlap_ratios[epoch_index % len(overlap_ratios)]
-        train_dataset = utils.datasets.TensorDataset(cfg["cqt"], label_dir, train_dir, cfg["min_duration"], aug = False)
+        train_dataset = utils.datasets.TensorDataset(cfg["cqt"], label_dir, train_dir, 
+                                                     cfg["min_duration"], aug=True,
+                                                     noise_dir=cfg["noise_dir"])
         train_dataloader = torch.utils.data.DataLoader(train_dataset,
                                                        batch_size=batch_size,
                                                        shuffle=True,
@@ -146,7 +148,7 @@ if __name__ == "__main__":
             for g in optimizer.param_groups:
                 warmup_num =  5 * len(train_dataloader)
                 if batch_num <= warmup_num:
-                    scale = math.pow(batch_num/warmup_num, 4)
+                    scale = math.pow(batch_num / warmup_num, 4)
                     g["lr"] = cfg["opt"]["learning_rate"] * scale
                 lr = g["lr"]
 
