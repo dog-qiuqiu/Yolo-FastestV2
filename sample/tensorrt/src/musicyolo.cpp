@@ -7,6 +7,8 @@
 #include <iomanip>
 #include <fstream>
 #include <cmath>
+#include <algorithm>
+#include <cassert>
 
 using namespace nvinfer1;
 
@@ -399,7 +401,7 @@ int Engine::nmsHandle(std::vector<TargetBox> &tmpBoxes,
                       float nmsThresh)
 {
     std::vector<int> picked;
-    sort(tmpBoxes.begin(), tmpBoxes.end(), scoreSort);
+    std::sort(tmpBoxes.begin(), tmpBoxes.end(), scoreSort);
 
     for (int i = 0; i < tmpBoxes.size(); i++) {
         int keep = 1;
@@ -441,7 +443,7 @@ int processInnerBox(std::vector<TargetBox> &dstBoxes) {
     return 0;
 }
 
-bool locationSort(TargetBox &a, TargetBox &b) 
+bool locationSort(const TargetBox &a, const TargetBox &b) 
 { 
     return (a.x1 < b.x1); 
 }
@@ -454,7 +456,7 @@ std::vector<Note> convertBoxs2Notes(std::vector<std::vector<TargetBox>> &boxs, i
     float lastPos = 0;
     for (int i = 0; i < boxs.size(); ++i){
         int offsetPixel = hop * i;
-        sort(boxs[i].begin(), boxs[i].end(), locationSort);
+        std::sort(boxs[i].begin(), boxs[i].end(), locationSort);
 
         bool first = true;
         float x1, y1, x2, y2;
@@ -537,13 +539,13 @@ std::vector<Note> Engine::inferPiece(const std::vector<int16_t>& inAudio, int wi
         std::vector<TargetBox> boxes;
         nmsHandle(tmpBoxes, boxes, nmsThresh);
         // std::cout << "nms" << " " << boxes.size() << " " << nmsThresh << std::endl;
-        sort(boxes.begin(), boxes.end(), [](TargetBox &a, TargetBox &b) { return a.x1 < b.x1; });
+        std::sort(boxes.begin(), boxes.end(), [](const TargetBox &a, const TargetBox &b) { return a.x1 < b.x1; });
         processInnerBox(boxes);
         dstBoxes.emplace_back(std::move(boxes));
     }
 
     std::vector<Note> notes = convertBoxs2Notes(dstBoxes, hop, scaleH, scaleW, inputWidth);
-    sort(notes.begin(), notes.end(), [](Note &a, Note &b) { return a.onset < b.onset; });
+    std::sort(notes.begin(), notes.end(), [](const Note &a, const Note &b) { return a.onset < b.onset; });
     // for (int id = 0; id < notes.size(); ++id){
     //     std::cout << notes[id].onset << " " << notes[id].offset <<" " << notes[id].pitch << " " << notes[id].score << std::endl;
     // }

@@ -32,7 +32,37 @@ int writeNotes(const std::string &filePath, const std::vector<Note> &notes){
     out.close();
 }
 
+int testRunTime(Engine &engine){
+    const std::string &inPath = "/home/data/SSVD-v2.0/test16k/102714.wav";
+    std::vector<int16_t> cpuAudio;
+    cpuAudio = audioRead(inPath); // [0, 1]
+    std::cout << "Audio length: " << cpuAudio.size() / 16000.f << " s" << std::endl;
+
+    size_t warmUP = 10;
+    size_t numIterations = 100;
+
+    std::vector<Note> notes;
+    for (size_t i = 0; i < warmUP; ++i) {
+        notes = engine.inferPiece(cpuAudio, 80448, 24000);
+    }
+
+    auto t1 = Clock::now();
+    for (size_t i = 0; i < numIterations; ++i) {
+        notes = engine.inferPiece(cpuAudio, 80448, 24000);
+    }
+
+    auto t2 = Clock::now();
+    double totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+    std::cout << "Success! Average time per inference: " << totalTime / numIterations << " ms" << std::endl;
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
+
+    if (argc != 3 && argc != 2){
+        std::cout << "usage: exec srcDir saveDir or exec flag but input parameters num: " << argc << std::endl;
+        return 0;
+    }
     // Specify our GPU inference configuration options
     Options options;
     // TODO: If your model only supports a static batch size
@@ -45,12 +75,10 @@ int main(int argc, char *argv[]) {
     }
 
     Engine engine(options);
-
     // TODO: Specify your model here.
     // Must specify a dynamic batch size when exporting the model from onnx.
     // If model only specifies a static batch size, must set the above variable doesSupportDynamicBatchSize to false.
-    // const std::string onnxModelpath = "../../model/musicyolo-opt.onnx";
-    const std::string onnxModelpath = "/home/data/wxk/Yolo-FastestV2/model/musicyolo.onnx";
+    const std::string onnxModelpath = "../../../model/musicyolo.onnx";
 
     bool succ = engine.build(onnxModelpath);
     if (!succ) {
@@ -65,6 +93,10 @@ int main(int argc, char *argv[]) {
     // Lets use a batch size which matches that which we set the Options.optBatchSize option
     size_t batchSize = options.optBatchSize;
 
+    if (argc == 2){
+        return testRunTime(engine);
+    }
+
     const std::string audioDir(argv[1]);
     const std::string saveDir(argv[2]);
 
@@ -77,30 +109,9 @@ int main(int argc, char *argv[]) {
     std::vector<int16_t> cpuAudio;
     std::vector<Note> notes;
     for(const auto &entry: fs::directory_iterator(audioDir)){
-        // const std::string &inPath = entry.path();
-        const std::string &inPath = "/home/data/SSVD-v2.0/test16k/102714.wav";
+        const std::string &inPath = entry.path();
         std::cout << inPath << std::endl;
-        cpuAudio.clear();
-        notes.clear();
         cpuAudio = audioRead(inPath); // [0, 1]
-        std::cout << "Audio length: " << cpuAudio.size() / 16000.f << " s" << std::endl;
-        size_t warmUP = 10;
-        size_t numIterations = 100;
-
-        for (size_t i = 0; i < warmUP; ++i) {
-            notes = engine.inferPiece(cpuAudio, 80448, 24000);
-        }
-
-        auto t1 = Clock::now();
-        for (size_t i = 0; i < numIterations; ++i) {
-            notes = engine.inferPiece(cpuAudio, 80448, 24000);
-        }
-        auto t2 = Clock::now();
-        double totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-        std::cout << "Success! Average time per inference: " << totalTime / numIterations << " ms" << std::endl;
-
-        exit(0);
-
         notes = engine.inferPiece(cpuAudio, 80448, 24000);
         std::string base_filename = inPath.substr(inPath.find_last_of("/\\") + 1);
         std::string::size_type const p(base_filename.find_last_of('.'));

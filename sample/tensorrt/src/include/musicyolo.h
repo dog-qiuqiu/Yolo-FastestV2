@@ -1,11 +1,9 @@
 #ifndef TENSORRT_H_
 #define TENSORRT_H_
 
-#include <opencv2/opencv.hpp>
-#include <opencv2/core/cuda.hpp>
-#include <opencv2/cudawarping.hpp>
-#include <opencv2/cudaarithm.hpp>
 #include "NvInfer.h"
+#include <vector>
+#include <memory>
 #include <cuda_runtime_api.h>
 
 // 参考代码 https://github.com/cyrusbehr/tensorrt-cpp-api/blob/main/src/engine.h
