@@ -77,11 +77,30 @@ int main(int argc, char *argv[]) {
     std::vector<int16_t> cpuAudio;
     std::vector<Note> notes;
     for(const auto &entry: fs::directory_iterator(audioDir)){
-        const std::string &inPath = entry.path();
+        // const std::string &inPath = entry.path();
+        const std::string &inPath = "/home/data/SSVD-v2.0/test16k/102714.wav";
         std::cout << inPath << std::endl;
         cpuAudio.clear();
         notes.clear();
         cpuAudio = audioRead(inPath); // [0, 1]
+        std::cout << "Audio length: " << cpuAudio.size() / 16000.f << " s" << std::endl;
+        size_t warmUP = 10;
+        size_t numIterations = 100;
+
+        for (size_t i = 0; i < warmUP; ++i) {
+            notes = engine.inferPiece(cpuAudio, 80448, 24000);
+        }
+
+        auto t1 = Clock::now();
+        for (size_t i = 0; i < numIterations; ++i) {
+            notes = engine.inferPiece(cpuAudio, 80448, 24000);
+        }
+        auto t2 = Clock::now();
+        double totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+        std::cout << "Success! Average time per inference: " << totalTime / numIterations << " ms" << std::endl;
+
+        exit(0);
+
         notes = engine.inferPiece(cpuAudio, 80448, 24000);
         std::string base_filename = inPath.substr(inPath.find_last_of("/\\") + 1);
         std::string::size_type const p(base_filename.find_last_of('.'));
