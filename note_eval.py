@@ -18,7 +18,7 @@ def get_onset_or_offset(filepath, flag):
     times = []
     with open(filepath) as f:
         for line in f:
-            onset, offset, _ = line.strip().split()
+            onset, offset = line.strip().split()[: 2]
             if float(onset)<0:
                 onset = 0
                 print('nagative onset', filepath)

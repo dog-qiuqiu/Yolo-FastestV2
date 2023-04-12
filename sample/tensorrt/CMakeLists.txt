@@ -16,6 +16,7 @@ include_directories(/home/wxk/cuda/cuda/include/)
 include_directories(./src/include)
 # 添加非标准的共享库搜索路径
 link_directories(/home/wxk/tensorrt/tensorrt/lib/ /home/wxk/cuda/cuda/lib64)
+link_libraries(stdc++fs)
 
 add_executable(test ./src/musicyolo.cpp test.cpp)
 target_link_libraries(test nvinfer)

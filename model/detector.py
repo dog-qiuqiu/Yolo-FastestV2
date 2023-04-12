@@ -116,21 +116,27 @@ if __name__ == "__main__":
         cfg["cqt"], cfg["m_config"]["width"], cfg["m_config"]["height"], 
         cfg["m_config"]["anchor_num"], False, 
         convert2image=cfg["m_config"]["convert2image"], export_onnx=True).to(device)
-    model.load_state_dict(torch.load(args.weight, map_location=device))
-    model.eval()
-    test_data = torch.rand(1, 80448)
-    model(test_data)
-    torch.onnx.export(model,                     # model being run
-                      test_data,                 # model input (or a tuple for multiple inputs)
-                     "musicyolo.onnx",           # where to save the model (can be a file or file-like object)
-                      export_params=True,        # store the trained parameter weights inside the model file
-                      opset_version=11,          # the ONNX version to export the model to
-                      do_constant_folding=True,  # whether to execute constant folding for optimization
-                      input_names=["audio16k80448"], 
-                      output_names=["output0", "output1"])
-    onnx_model = onnx.load("musicyolo.onnx")
-    onnx.checker.check_model(onnx_model)
+    
+    from ptflops import get_model_complexity_info
+    # Flops: 53.45 MMac Params: 236.82 k
+    flops, params = get_model_complexity_info(model, (80448, ), as_strings=True, print_per_layer_stat=True)
+    print('Flops: ' + flops)
+    print('Params: ' + params)
 
-    # onnx to tensorRT ./trtexec --onnx="/home/data/wxk/Yolo-FastestV2/model/musicyolo-opt.onnx" --saveEngine="/home/data/wxk/Yolo-FastestV2/model/musicyolo-opt.trt"  
+    if args.weight:
+        model.load_state_dict(torch.load(args.weight, map_location=device))
+        model.eval()
+        test_data = torch.rand(1, 80448)
+        model(test_data)
+        torch.onnx.export(model,                     # model being run
+                          test_data,                 # model input (or a tuple for multiple inputs)
+                          "musicyolo.onnx",          # where to save the model (can be a file or file-like object)
+                          export_params=True,        # store the trained parameter weights inside the model file
+                          opset_version=11,          # the ONNX version to export the model to
+                          do_constant_folding=True,  # whether to execute constant folding for optimization
+                          input_names=["audio16k80448"], 
+                          output_names=["output0", "output1"])
+        onnx_model = onnx.load("musicyolo.onnx")
+        onnx.checker.check_model(onnx_model)
 
-
+        # onnx to tensorRT ./trtexec --onnx="/home/data/wxk/Yolo-FastestV2/model/musicyolo-opt.onnx" --saveEngine="/home/data/wxk/Yolo-FastestV2/model/musicyolo-opt.trt"  

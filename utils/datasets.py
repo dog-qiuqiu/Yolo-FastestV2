@@ -259,7 +259,7 @@ class TestDataset():
         stride = hop / sr
         frame = int(cqt_config['duration'] / stride)
 
-        n_fft = sr / fmin / (2** (1 / bins_per_octave) - 1) # 19,855.76
+        n_fft = sr / fmin / (2 ** (1 / bins_per_octave) - 1) # 19,855.76
         n_fft = 2 ** int(math.ceil(math.log2(n_fft))) # 32768 2.048s
         window_length = (frame - 1) * hop + n_fft # 150 frame 5.028s
         overlap_ratio = cqt_config['overlap_ratio']

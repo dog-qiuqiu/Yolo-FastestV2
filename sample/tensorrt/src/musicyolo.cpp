@@ -544,10 +544,10 @@ std::vector<Note> Engine::inferPiece(const std::vector<int16_t>& inAudio, int wi
 
     std::vector<Note> notes = convertBoxs2Notes(dstBoxes, hop, scaleH, scaleW, inputWidth);
     sort(notes.begin(), notes.end(), [](Note &a, Note &b) { return a.onset < b.onset; });
-    for (int id = 0; id < notes.size(); ++id){
-        std::cout << notes[id].onset << " " << notes[id].offset <<" " << notes[id].pitch << " " << notes[id].score << std::endl;
-    }
-    std::cout << "notes size: " << notes.size() << std::endl;
+    // for (int id = 0; id < notes.size(); ++id){
+    //     std::cout << notes[id].onset << " " << notes[id].offset <<" " << notes[id].pitch << " " << notes[id].score << std::endl;
+    // }
+    // std::cout << "notes size: " << notes.size() << std::endl;
 
     return notes;
 }
