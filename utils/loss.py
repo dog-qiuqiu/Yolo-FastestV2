@@ -168,7 +168,7 @@ def compute_loss(preds, targets, cfg, device):
                     pbox = torch.cat((pxy, pwh), 1)  # predicted box shape [5308, 4]
                     # shape [5308, ]
                     ciou = bbox_iou(pbox.t(), tbox[layer_index[i]], x1y1x2y2=False, CIoU=True)  # ciou(prediction, target)
-                    lbox +=  (1.0 - ciou).mean()
+                    lbox +=  (1.0 - ciou).mean()*balance[0]
 
         #计算obj分支loss
         elif i % 2 == 1:
@@ -185,7 +185,7 @@ def compute_loss(preds, targets, cfg, device):
                 if nb:
                     tobj[b, a, gj, gi] = 1.0
                     
-            lobj += BCEobj(pred[..., 0], tobj) * balance[layer_index[i]] # obj loss
+            lobj += BCEobj(pred[..., 0], tobj) * balance[1] # obj loss
         else:
             print("error")
             raise

@@ -84,5 +84,4 @@ if __name__ == '__main__':
 
         if dumpdir:
             dumppath = os.path.join(dumpdir, basename + '.png')
-            utils.utils.dump_test_data(feature, dumppath, total_notes, cfg["cqt"], no=str(fileno))
-            # exit(0)
+            utils.utils.dump_test_data(feature, dumppath, total_notes, cfg["cqt"])

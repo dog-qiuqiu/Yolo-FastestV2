@@ -59,8 +59,8 @@ int testRunTime(Engine &engine){
 
 int main(int argc, char *argv[]) {
 
-    if (argc != 3 && argc != 2){
-        std::cout << "usage: exec srcDir saveDir or exec flag but input parameters num: " << argc << std::endl;
+    if (argc != 3 && argc != 1){
+        std::cout << "usage: exec srcDir saveDir or exec but input parameters num: " << argc << std::endl;
         return 0;
     }
     // Specify our GPU inference configuration options
@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
     // Lets use a batch size which matches that which we set the Options.optBatchSize option
     size_t batchSize = options.optBatchSize;
 
-    if (argc == 2){
+    if (argc == 1){
         return testRunTime(engine);
     }
 

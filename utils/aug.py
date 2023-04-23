@@ -126,7 +126,8 @@ class TestAugmentor(unittest.TestCase):
 
   # 可以设置volume [0.2, 1] 需要测试
   def test_volumeAu(self):
-    dB = 1
+    # dB = -13
+    dB = -24
     auwav, _ = self.augmentor.volumeAu(self.wav, dB)
     if auwav.max() > 1.0:
       factor = 1. / (auwav.max() + 1e-7)
@@ -158,7 +159,7 @@ class TestAugmentor(unittest.TestCase):
 
   # 音高偏移可以选择半音[-2, 2]
   def test_pitch_shift(self):
-    midi_shift = 1
+    midi_shift = 2
     wav = self.augmentor.pitch_shift(self.wav, midi_shift)
     os.makedirs('pitch_shift', exist_ok=True)
 

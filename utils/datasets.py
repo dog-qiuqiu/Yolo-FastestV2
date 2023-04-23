@@ -138,23 +138,60 @@ class TensorDataset():
         audio = audio[start: stop]
 
         speed = 1.0
-        # if self.aug:
-        #     p = np.random.rand()
-        #     # 一定的概率调整速度
-        #     if p < 0.3:
-        #         speed = np.random.rand() * 0.4 + 0.8
-        #         audio = self.augmentor.adjust_speed(audio, speed)
+        midi_shift = 0
+        if self.aug:
+            p = np.random.rand()
+            # 以一定概率谐波失真
+            # if p < 0.3:
+            #     count = np.random.randint(1, 6)
+            #     audio = self.augmentor.harmonic_distortion(audio, count)
+            # 一定的概率调整速度
+            # if p < 0.3:
+            #     speed = np.random.rand() * 0.4 + 0.8
+            #     audio = self.augmentor.adjust_speed(audio, speed)
+            # 一定的概率做音量增强
+            # if p < 0.3:
+            #     dB = np.random.randint(-24, -14)
+            #     audio, _ = self.augmentor.volumeAu(audio, dB)
+            #     if audio.max() > 1.0:
+            #         factor = 1. / (audio.max() + 1e-7)
+            #         audio *= factor
+            # 一定的概率音高偏移
+            # if p < 0.3:
+            #     midi_shift = np.random.randint(-2, 3)
+            #     audio = self.augmentor.pitch_shift(audio, midi_shift)
+
+        neg_sample = False
         if self.aug and self.noise_dir:
             p = np.random.rand()
             # 一定的概率添加噪声
             if p < 0.3:
-                speed = np.random.rand() * 0.4 + 0.8
                 snr = np.random.randint(15, 25)
                 noisename = np.random.choice(self.noise_files)
                 noisepath = os.path.join(self.noise_dir, noisename)
                 noise, _ = librosa.load(noisepath, dtype='float32', mono=True, sr=self.sr)
                 noise = noise[: len(audio)]
                 audio, _ = self.augmentor.snr2noise(audio, noise, snr)
+                if audio.max() > 1.0:
+                    factor = 1. / (audio.max() + 1e-7)
+                    audio *= factor
+            # 以一定的概率增加负样本
+            elif p < 0.6:
+                noisename = np.random.choice(self.noise_files)
+                noisepath = os.path.join(self.noise_dir, noisename)
+                noise, _ = librosa.load(noisepath, dtype='float32', mono=True, sr=self.sr)
+                noise = noise[: len(audio)]
+                audio = noise
+                neg_sample = True
+            
+            p = np.random.rand()
+            # 一定的概率做音量增强
+            if p < 0.3:
+                dB = np.random.randint(-24, -14)
+                audio, _ = self.augmentor.volumeAu(audio, dB)
+                if audio.max() > 1.0:
+                    factor = 1. / (audio.max() + 1e-7)
+                    audio *= factor
 
         feature = np.zeros((self.window_length, ), dtype='float32')
         audio = audio[: self.window_length]
@@ -164,18 +201,22 @@ class TensorDataset():
         stop_t = start_t + self.duration * min(1.0, speed)
 
         boxs = []
-        for onset, offset, pitch in notes:
-            if onset < stop_t and offset > start_t and pitch >= 21 and pitch <= 108:
-                t = min(offset, stop_t) - max(onset, start_t)
-                if t >= self.min_duration:
-                    x0 = max(onset, start_t) - start_t
-                    x0 = x0 / self.stride / speed / self.frame
-                    y0 = (pitch - 21) * self.bins_per_octave / 12 / self.n_bins
-                    h = 1 - y0
-                    w = t / self.stride / speed / self.frame
-                    x = x0 + w / 2
-                    y = y0 + h / 2
-                    boxs.append([0, x, y, w, h]) # 第一维度在collect_fn中被赋值为框序号
+        if not neg_sample:
+            for onset, offset, pitch in notes:
+                if onset < stop_t and offset > start_t and pitch >= 21 and pitch <= 108:
+                    t = min(offset, stop_t) - max(onset, start_t)
+                    if t >= self.min_duration:
+                        x0 = max(onset, start_t) - start_t
+                        x0 = x0 / self.stride / speed / self.frame
+                        # 基频丢失的情况需要考虑进去
+                        assert pitch + midi_shift >= 21, (midi_shift, self.filepath_num[pointer][0])
+                        pitch = pitch + midi_shift if pitch + midi_shift >= 21 else pitch + 12
+                        y0 = (pitch - 21) * self.bins_per_octave / 12 / self.n_bins
+                        h = 1 - y0
+                        w = t / self.stride / speed / self.frame
+                        x = x0 + w / 2
+                        y = y0 + h / 2
+                        boxs.append([0, x, y, w, h]) # 第一维度在collect_fn中被赋值为框序号
         boxs = np.array(boxs, dtype='float32')
 
         return torch.from_numpy(feature), torch.from_numpy(boxs)
