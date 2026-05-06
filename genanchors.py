@@ -6,12 +6,12 @@ Created on Feb 20, 2017
 from os import listdir
 from os.path import isfile, join
 import argparse
-#import cv2
+import cv2
 import numpy as np
 import sys
 import os
 import shutil
-import random 
+import random
 import math
 
 def IOU(x,centroids):
@@ -59,7 +59,8 @@ def write_anchors_to_file(centroids,X,anchor_file, width_in_cfg_file, height_in_
         f.write('%0.2f,%0.2f, '%(anchors[i,0],anchors[i,1]))
 
     #there should not be comma after last anchor, that's why
-    f.write('%0.2f,%0.2f\n'%(anchors[sorted_indices[-1:],0],anchors[sorted_indices[-1:],1]))
+    last_idx = int(sorted_indices[-1])
+    f.write('%0.2f,%0.2f\n'%(anchors[last_idx, 0], anchors[last_idx, 1]))
     
     f.write('%f\n'%(avg_IOU(X,centroids)))
     print()
@@ -92,7 +93,7 @@ def kmeans(X,centroids,eps,anchor_file, width_in_cfg_file, height_in_cfg_file):
             return
 
         #calculate new centroids
-        centroid_sums=np.zeros((k,dim),np.float)
+        centroid_sums=np.zeros((k,dim), dtype=np.float64)
         for i in range(N):
             centroid_sums[assignments[i]]+=X[i]        
         for j in range(k):            
@@ -115,7 +116,13 @@ def main(argv):
 
     parser.add_argument('--input_height', default = 352, type = int, 
                         help='model input height\n' )  
-   
+
+    parser.add_argument('--keep-ratio', dest='keep_ratio', action='store_true',
+                        default=False,
+                        help='letterbox-aware 模式 (默认关): 按 letterbox ratio 将每个 label 变换到网络输入空间后聚类, 使 anchor 与训练目标在同一空间')
+    parser.add_argument('--no-keep-ratio', dest='keep_ratio', action='store_false',
+                        help='使用原始 YOLO 归一化尺寸聚类 (默认, stretch 训练路线使用)')
+
     args = parser.parse_args()
     
     if not os.path.exists(args.output_dir):
@@ -127,23 +134,61 @@ def main(argv):
     
     annotation_dims = []
 
-    size = np.zeros((1,1,3))
-    for line in lines:
-                    
-        #line = line.replace('images','labels')
-        #line = line.replace('img1','labels')
-        line = line.replace('JPEGImages','labels')        
-        
+    # keep_ratio 缓存: 相同尺寸的图只算一次 letterbox ratio
+    size_cache = {}
+    input_w = args.input_width
+    input_h = args.input_height
+    print(f'[genanchors] keep_ratio={args.keep_ratio}, input={input_w}x{input_h}')
 
-        line = line.replace('.jpg','.txt')
-        line = line.replace('.png','.txt')
-        print(line)
-        f2 = open(line)
-        for line in f2.readlines():
-            line = line.rstrip('\n')
-            w,h = line.split(' ')[3:]            
-            #print(w,h)
-            annotation_dims.append(tuple(map(float,(w,h))))
+    missing_imgs = 0
+    for line in lines:
+        img_path = line
+        # 兼容多种数据集布局: VOC 风格 (JPEGImages -> labels) 或 YOLO 标准 (images -> labels)
+        line_lbl = line.replace('JPEGImages', 'labels')
+        line_lbl = line_lbl.replace(os.sep + 'images' + os.sep,
+                                    os.sep + 'labels' + os.sep)
+        line_lbl = line_lbl.replace('/images/', '/labels/')
+        # 替换扩展名为 .txt (使用 splitext 避免文件名内含点导致截断)
+        base, _ = os.path.splitext(line_lbl)
+        line_lbl = base + '.txt'
+        if not os.path.exists(line_lbl):
+            print(f'[skip] 标签不存在: {line_lbl}')
+            continue
+
+        # letterbox-aware: 获取原图尺寸并计算 letterbox ratio
+        if args.keep_ratio:
+            if img_path in size_cache:
+                ori_w, ori_h, ratio = size_cache[img_path]
+            else:
+                if not os.path.exists(img_path):
+                    missing_imgs += 1
+                    continue
+                im = cv2.imread(img_path)
+                if im is None:
+                    missing_imgs += 1
+                    continue
+                ori_h, ori_w = im.shape[:2]
+                ratio = min(input_w / ori_w, input_h / ori_h)
+                size_cache[img_path] = (ori_w, ori_h, ratio)
+
+        f2 = open(line_lbl)
+        for ln in f2.readlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            parts = ln.split()
+            if len(parts) < 5:
+                continue
+            w, h = float(parts[3]), float(parts[4])
+            if args.keep_ratio:
+                # YOLO 归一化 → 原图像素 → letterbox 像素 → 网络输入归一化
+                w = w * ori_w * ratio / input_w
+                h = h * ori_h * ratio / input_h
+            annotation_dims.append((w, h))
+        f2.close()
+
+    if missing_imgs:
+        print(f'[warn] {missing_imgs} 张图无法读取, 已跳过')
     annotation_dims = np.array(annotation_dims)
   
     eps = 0.005

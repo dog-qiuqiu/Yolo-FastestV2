@@ -1,0 +1,22 @@
+[name]
+model_name=dms-kaggle
+
+[train-configure]
+epochs=300
+steps=150,250
+batch_size=64
+subdivisions=1
+learning_rate=0.001
+
+[model-configure]
+pre_weights=None
+classes=5
+width=352
+height=352
+anchor_num=3
+anchors=22.09,25.21, 35.00,102.20, 49.40,39.63, 99.51,107.01, 108.28,200.34, 225.28,220.00
+
+[data-configure]
+train=data/dms-kaggle/train.txt
+val=data/dms-kaggle/valid.txt
+names=data/dms-kaggle.names

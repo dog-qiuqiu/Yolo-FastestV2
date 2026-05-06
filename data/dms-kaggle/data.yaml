@@ -1,0 +1,10 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+nc: 5
+names:
+- Open Eye
+- Closed Eye
+- Cigarette
+- Phone
+- Seatbelt

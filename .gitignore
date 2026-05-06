@@ -1,6 +1,30 @@
-model/__pycache__
-model/backbone/__pycache__
-utils/__pycache__
-weights
+# IDE
+.idea/
+.vscode/
+
+**/__pycache__/
+weights/*
+!weights/README.md
+!weights/.gitkeep
+
+# 推理脚本临时输出
+infer_onnx_result.png
+infer_ncnn_result.png
+.test_img.txt
+data/test.jpg
 data/voc.data
 data/voc.names
+
+# 训练日志
+logs/
+
+# NCNN/ONNX 推理截屏
+snapshots/
+
+# 数据集原始数据（数据集本身不入库，从 Kaggle 获取）
+data/dms-kaggle/train/
+data/dms-kaggle/valid/
+data/dms-kaggle/test/
+# 本机图片列表（由用户按需生成，路径与本机目录相关）
+data/dms-kaggle/train.txt
+data/dms-kaggle/valid.txt

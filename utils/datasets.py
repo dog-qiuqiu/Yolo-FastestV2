@@ -74,8 +74,40 @@ def collate_fn(batch):
             l[:, 0] = i
     return torch.stack(img), torch.cat(label, 0)
 
-class TensorDataset():
-    def __init__(self, path, img_size_width = 352, img_size_height = 352, imgaug = False):
+
+def letterbox(img, new_w, new_h, pad_color=(114, 114, 114)):
+    """等比缩放到 (new_w, new_h) + 灰边填充 (canvas-style letterbox)。
+
+    返回:
+        canvas (np.ndarray, new_h x new_w x 3)
+        ratio  (float)        统一缩放比 (长/宽相同)
+        pad_l  (int)          左侧填充像素数
+        pad_t  (int)          上侧填充像素数
+    """
+    h, w = img.shape[:2]
+    ratio = min(new_w / w, new_h / h)
+    rw, rh = int(round(w * ratio)), int(round(h * ratio))
+    resized = cv2.resize(img, (rw, rh), interpolation=cv2.INTER_LINEAR)
+    pad_l = (new_w - rw) // 2
+    pad_t = (new_h - rh) // 2
+    canvas = np.full((new_h, new_w, 3), pad_color, dtype=img.dtype)
+    canvas[pad_t:pad_t + rh, pad_l:pad_l + rw] = resized
+    return canvas, ratio, pad_l, pad_t
+
+
+class TensorDataset(Dataset):
+    def __init__(self, path, img_size_width=352, img_size_height=352,
+                 imgaug=False, keep_ratio=False):
+        """
+        Args:
+            path:            train.txt / valid.txt 路径
+            img_size_width:  网络输入宽
+            img_size_height: 网络输入高
+            imgaug:          是否做训练增强
+            keep_ratio:      False=直接 stretch 拉伸 (默认, 适合本数据集 16:9 固定比例);
+                             True=letterbox 等比缩放 (适合通用场景, 但本数据集精度较低)
+        """
+        super().__init__()
         assert os.path.exists(path), "%s文件路径错误或不存在" % path
 
         self.path = path
@@ -84,6 +116,7 @@ class TensorDataset():
         self.img_size_height = img_size_height
         self.img_formats = ['bmp', 'jpg', 'jpeg', 'png']
         self.imgaug = imgaug
+        self.keep_ratio = keep_ratio
 
         # 数据检查
         with open(self.path, 'r') as f:
@@ -100,32 +133,67 @@ class TensorDataset():
 
     def __getitem__(self, index):
         img_path = self.data_list[index]
-        label_path = img_path.split(".")[0] + ".txt"
+        # 兼容 YOLO 标准目录结构: images/ 与 labels/ 并列，且文件名中可能包含 "." (如 roboflow 导出)
+        base, _ = os.path.splitext(img_path)
+        label_path = base.replace(os.sep + "images" + os.sep, os.sep + "labels" + os.sep) \
+                         .replace("/images/", "/labels/") + ".txt"
 
-        # 归一化操作
+        # 读图
         img = cv2.imread(img_path)
-        img = cv2.resize(img, (self.img_size_width, self.img_size_height), interpolation = cv2.INTER_LINEAR) 
-        #数据增强
-        if self.imgaug == True:
-            img = img_aug(img)
-        img = img.transpose(2,0,1)
+        ori_h, ori_w = img.shape[:2]
 
-        # 加载label文件
-        if os.path.exists(label_path):
-            label = []
-            with open(label_path, 'r') as f:
-                for line in f.readlines():
-                    l = line.strip().split(" ")
-                    label.append([0, l[0], l[1], l[2], l[3], l[4]])
-            label = np.array(label, dtype=np.float32)
-
-            if label.shape[0]:
-                assert label.shape[1] == 6, '> 5 label columns: %s' % label_path
-                #assert (label >= 0).all(), 'negative labels: %s'%label_path
-                #assert (label[:, 1:] <= 1).all(), 'non-normalized or out of bounds coordinate labels: %s'%label_path
+        # 预处理: letterbox 等比 (默认) 或 stretch 直接拉伸
+        if self.keep_ratio:
+            img, ratio, pad_l, pad_t = letterbox(
+                img, self.img_size_width, self.img_size_height
+            )
         else:
-            raise Exception("%s is not exist" % label_path)  
-        
+            img = cv2.resize(
+                img, (self.img_size_width, self.img_size_height),
+                interpolation=cv2.INTER_LINEAR,
+            )
+            ratio, pad_l, pad_t = None, 0, 0
+
+        # 数据增强
+        if self.imgaug:
+            img = img_aug(img)
+        img = img.transpose(2, 0, 1)
+
+        # 加载 label 文件 (YOLO 归一化 cx,cy,w,h, 相对原图)
+        if not os.path.exists(label_path):
+            raise Exception("%s is not exist" % label_path)
+
+        label = []
+        with open(label_path, 'r') as f:
+            for line in f.readlines():
+                s = line.strip()
+                if not s:
+                    continue
+                parts = s.split()
+                if len(parts) < 5:
+                    continue
+                cls = float(parts[0])
+                cx, cy, bw, bh = (float(parts[1]), float(parts[2]),
+                                  float(parts[3]), float(parts[4]))
+
+                if self.keep_ratio:
+                    # YOLO 归一化坐标 -> 原图像素 -> letterbox 像素 -> 网络输入归一化
+                    cx_px = cx * ori_w * ratio + pad_l
+                    cy_px = cy * ori_h * ratio + pad_t
+                    bw_px = bw * ori_w * ratio
+                    bh_px = bh * ori_h * ratio
+                    cx = cx_px / self.img_size_width
+                    cy = cy_px / self.img_size_height
+                    bw = bw_px / self.img_size_width
+                    bh = bh_px / self.img_size_height
+                # else stretch: 归一化坐标在 [0,1] 范围内不变 (与原仓库行为一致)
+
+                label.append([0, cls, cx, cy, bw, bh])
+        label = np.array(label, dtype=np.float32)
+
+        if label.shape[0]:
+            assert label.shape[1] == 6, '> 5 label columns: %s' % label_path
+
         return torch.from_numpy(img), torch.from_numpy(label)
 
     def __len__(self):
