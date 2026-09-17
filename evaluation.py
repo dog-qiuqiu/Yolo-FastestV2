@@ -1,65 +1,63 @@
-import os
-import torch
+"""Evaluate one Yolo-FastestV2 checkpoint with standard COCO bbox metrics."""
+
 import argparse
-from tqdm import tqdm
+import os
 
+import torch
 
-from torchsummary import summary
-
-import utils.utils
+from model.detector import Detector
 import utils.datasets
-import model.detector
+import utils.utils
+from utils.coco_evaluation import evaluate_coco
 
-if __name__ == '__main__':
-    # 指定训练配置文件
+
+def get_split_paths(cfg, split):
+    """Return the image list and COCO annotation file for a named split."""
+    if split == "valid":
+        return cfg["val"], cfg["val_annotations"]
+    return cfg["test"], cfg["test_annotations"]
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='',
-                        help='Specify training profile *.data')
-    parser.add_argument('--weights', type=str, default='',
-                        help='The path of the model')
+    parser.add_argument("--data", type=str, required=True,
+                        help="Training profile *.data")
+    parser.add_argument("--weights", type=str, required=True,
+                        help="Checkpoint .pth or best.pt")
+    parser.add_argument("--split", choices=("valid", "test"), default="valid",
+                        help="Dataset split to evaluate")
     opt = parser.parse_args()
     cfg = utils.utils.load_datafile(opt.data)
+    dataset_path, annotation_path = get_split_paths(cfg, opt.split)
 
     assert os.path.exists(opt.weights), "请指定正确的模型路径"
-
-    #打印消息
-    print("评估配置:")
-    print("model_name:%s"%cfg["model_name"])
-    print("width:%d height:%d"%(cfg["width"], cfg["height"]))
-    print("val:%s"%(cfg["val"]))
-    print("model_path:%s"%(opt.weights))
-    
-    #加载数据
-    val_dataset = utils.datasets.TensorDataset(cfg["val"], cfg["width"], cfg["height"], imgaug = False)
+    assert os.path.exists(dataset_path), "请指定正确的数据集清单路径"
+    assert os.path.exists(annotation_path), "请指定正确的COCO标注路径"
 
     batch_size = int(cfg["batch_size"] / cfg["subdivisions"])
-    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
+    workers = 0
+    dataset = utils.datasets.TensorDataset(dataset_path, cfg["width"], cfg["height"], imgaug=False)
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=utils.datasets.collate_fn,
+        num_workers=workers,
+        pin_memory=True,
+        drop_last=False,
+        persistent_workers=workers > 0,
+    )
 
-    val_dataloader = torch.utils.data.DataLoader(val_dataset,
-                                                 batch_size=batch_size,
-                                                 shuffle=False,
-                                                 collate_fn=utils.datasets.collate_fn,
-                                                 num_workers=nw,
-                                                 pin_memory=True,
-                                                 drop_last=False,
-                                                 persistent_workers=True
-                                                 )
-    
-    #指定后端设备
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    #初始化模型
-    model = model.detector.Detector(cfg["classes"], cfg["anchor_num"], True).to(device)
+    model = Detector(cfg["classes"], cfg["anchor_num"], True).to(device)
     model.load_state_dict(torch.load(opt.weights, map_location=device))
-    #sets the module in eval node
-    model.eval()
 
-    #打印模型结构
-    summary(model, input_size=(3, cfg["height"], cfg["width"]))
-    
-    #模型评估
-    print("computer mAP...")
-    _, _, AP, _ = utils.utils.evaluation(val_dataloader, cfg, model, device)
-    print("computer PR...")
-    precision, recall, _, f1 = utils.utils.evaluation(val_dataloader, cfg, model, device, 0.3)
-    print("Precision:%f Recall:%f AP:%f F1:%f"%(precision, recall, AP, f1))
+    print("Evaluation split:%s" % opt.split)
+    print("COCO annotations:%s" % annotation_path)
+    metrics = evaluate_coco(dataloader, cfg, model, device, annotation_path)
+    print(
+        "COCO AP50-95:%f AP50:%f AP75:%f Detections:%d" % (
+            metrics["ap50_95"], metrics["ap50"], metrics["ap75"],
+            metrics["detections"],
+        )
+    )

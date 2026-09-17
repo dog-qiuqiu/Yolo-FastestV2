@@ -33,15 +33,15 @@ class Detector(nn.Module):
         if self.export_onnx:
             out_reg_2 = out_reg_2.sigmoid()
             out_obj_2 = out_obj_2.sigmoid()
-            out_cls_2 = F.softmax(out_cls_2, dim = 1)
+            out_cls_2 = F.softmax(out_cls_2, dim=1)
 
             out_reg_3 = out_reg_3.sigmoid()
             out_obj_3 = out_obj_3.sigmoid()
-            out_cls_3 = F.softmax(out_cls_3, dim = 1)
+            out_cls_3 = F.softmax(out_cls_3, dim=1)
 
             print("export onnx ...")
-            return torch.cat((out_reg_2, out_obj_2, out_cls_2), 1).permute(0, 2, 3, 1), \
-                   torch.cat((out_reg_3, out_obj_3, out_cls_3), 1).permute(0, 2, 3, 1)  
+            return torch.cat((out_reg_2, out_obj_2, out_cls_2), dim=1), \
+                   torch.cat((out_reg_3, out_obj_3, out_cls_3), dim=1)
 
         else:
             return out_reg_2, out_obj_2, out_cls_2, out_reg_3, out_obj_3, out_cls_3

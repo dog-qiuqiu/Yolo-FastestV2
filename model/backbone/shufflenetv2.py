@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.nn as nn
 from torchsummary import summary
@@ -47,20 +49,74 @@ class ShuffleV2Block(nn.Module):
 
     def forward(self, old_x):
         if self.stride==1:
-            x_proj, x = self.channel_shuffle(old_x)
+            x_proj, x = self.channel_shuffle_4d(old_x)
             return torch.cat((x_proj, self.branch_main(x)), 1)
         elif self.stride==2:
             x_proj = old_x
             x = old_x
             return torch.cat((self.branch_proj(x_proj), self.branch_main(x)), 1)
 
-    def channel_shuffle(self, x):
-        batchsize, num_channels, height, width = x.data.size()
-        assert (num_channels % 4 == 0)
-        x = x.reshape(batchsize * num_channels // 2, 2, height * width)
-        x = x.permute(1, 0, 2)
-        x = x.reshape(2, -1, num_channels // 2, height, width)
-        return x[0], x[1]
+    def channel_shuffle_4d(self, x):
+        """Split adjacent channel pairs into the projection and main branches.
+
+        The original implementation reshaped to 3D and 5D, transposed, and
+        indexed the result.  Selecting even and odd channels directly has the
+        same channel order while exporting as 4D ONNX Slice nodes.
+        """
+        input_channels = self.inp * 2
+        assert input_channels % 4 == 0
+        projection_channels = [
+            x[:, channel:channel + 1, :, :] for channel in range(0, input_channels, 2)
+        ]
+        main_channels = [
+            x[:, channel:channel + 1, :, :] for channel in range(1, input_channels, 2)
+        ]
+        return torch.cat(projection_channels, dim=1), torch.cat(main_channels, dim=1)
+
+
+class ShuffleV2ExportBlock(nn.Module):
+    """Export-only stride-one block that replaces channel shuffle with 1x1 convolutions."""
+
+    def __init__(self, source_block):
+        super().__init__()
+        if source_block.stride != 1:
+            raise ValueError("ShuffleV2ExportBlock only supports stride-one blocks")
+
+        self.branch_main = copy.deepcopy(source_block.branch_main)
+        original_conv = self.branch_main[0]
+        input_channels = original_conv.in_channels * 2
+        self.projection_select = nn.Conv2d(input_channels, original_conv.in_channels, 1, bias=False).to(
+            device=original_conv.weight.device, dtype=original_conv.weight.dtype
+        )
+        with torch.no_grad():
+            self.projection_select.weight.zero_()
+            channels = torch.arange(original_conv.in_channels, device=original_conv.weight.device)
+            self.projection_select.weight[channels, channels * 2, 0, 0] = 1.0
+        self.projection_select.weight.requires_grad_(False)
+
+        expanded_conv = nn.Conv2d(input_channels, original_conv.out_channels, 1, bias=original_conv.bias is not None).to(
+            device=original_conv.weight.device, dtype=original_conv.weight.dtype
+        )
+        with torch.no_grad():
+            expanded_conv.weight.zero_()
+            expanded_conv.weight[:, 1::2, :, :] = original_conv.weight
+            if original_conv.bias is not None:
+                expanded_conv.bias.copy_(original_conv.bias)
+        self.branch_main[0] = expanded_conv
+
+    def forward(self, x):
+        """Run both original ShuffleNetV2 branches without layout operations."""
+        return torch.cat((self.projection_select(x), self.branch_main(x)), 1)
+
+
+def replace_shuffle_blocks_for_export(module):
+    """Recursively replace stride-one ShuffleNetV2 blocks in an export model."""
+    for child_name, child_module in module.named_children():
+        if isinstance(child_module, ShuffleV2Block) and child_module.stride == 1:
+            setattr(module, child_name, ShuffleV2ExportBlock(child_module))
+        else:
+            replace_shuffle_blocks_for_export(child_module)
+    return module
 
 class ShuffleNetV2(nn.Module):
     def __init__(self, stage_out_channels, load_param):
@@ -77,7 +133,7 @@ class ShuffleNetV2(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
         stage_names = ["stage2", "stage3", "stage4"]
         for idxstage in range(len(self.stage_repeats)):

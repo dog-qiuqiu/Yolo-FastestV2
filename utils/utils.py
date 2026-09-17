@@ -29,14 +29,18 @@ def load_datafile(data_path):
 
            "val": None,           
            "train": None,
-           "names":None
+           "test": None,
+           "names":None,
+           "val_annotations": None,
+           "test_annotations": None,
         }
 
     assert os.path.exists(data_path), "请指定正确配置.data文件路径"
 
     #指定配置项的类型
     list_type_key = ["anchors", "steps"]
-    str_type_key = ["model_name", "val", "train", "names", "pre_weights"]
+    str_type_key = ["model_name", "val", "train", "test", "names", "pre_weights",
+                    "val_annotations", "test_annotations"]
     int_type_key = ["epochs", "batch_size", "classes", "width",
                    "height", "anchor_num", "subdivisions"]
     float_type_key = ["learning_rate"]
@@ -393,4 +397,4 @@ def evaluation(val_dataloader, cfg, model, device, conf_thres = 0.01, nms_thresh
     true_positives, pred_scores, pred_labels = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))]
     metrics_output = ap_per_class(true_positives, pred_scores, pred_labels, labels)
     
-    return metrics_output     
+    return metrics_output

@@ -16,14 +16,33 @@ from torchsummary import summary
 import utils.loss
 import utils.utils
 import utils.datasets
+from utils.coco_evaluation import evaluate_coco
 import model.detector
+
+
+def load_compatible_pretrained_weights(model, checkpoint_path, device):
+    """Load checkpoint tensors whose names and shapes match the current model."""
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model_state = model.state_dict()
+    compatible_state = {
+        name: tensor
+        for name, tensor in checkpoint.items()
+        if name in model_state and tensor.shape == model_state[name].shape
+    }
+    skipped_keys = sorted(set(checkpoint) - set(compatible_state))
+
+    model.load_state_dict(compatible_state, strict=False)
+    if skipped_keys:
+        print("Skip incompatible pretrained parameters: %s" % ", ".join(skipped_keys))
 
 
 if __name__ == '__main__':
     # 指定训练配置文件
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='',
+    parser.add_argument('--data', type=str, default='data/coco.data',
                         help='Specify training profile *.data')
+    parser.add_argument('--workers', type=int, default=4,
+                        help='DataLoader worker processes (use 0 if multiprocessing is unavailable)')
     opt = parser.parse_args()
     cfg = utils.utils.load_datafile(opt.data)
 
@@ -35,7 +54,8 @@ if __name__ == '__main__':
     val_dataset = utils.datasets.TensorDataset(cfg["val"], cfg["width"], cfg["height"], imgaug = False)
 
     batch_size = int(cfg["batch_size"] / cfg["subdivisions"])
-    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
+    # A small worker pool keeps image decoding/augmentation off the training process.
+    nw = max(0, opt.workers)
     # 训练集
     train_dataloader = torch.utils.data.DataLoader(train_dataset,
                                                    batch_size=batch_size,
@@ -44,7 +64,7 @@ if __name__ == '__main__':
                                                    num_workers=nw,
                                                    pin_memory=True,
                                                    drop_last=True,
-                                                   persistent_workers=True
+                                                   persistent_workers=nw > 0
                                                    )
     #验证集
     val_dataloader = torch.utils.data.DataLoader(val_dataset,
@@ -54,7 +74,7 @@ if __name__ == '__main__':
                                                  num_workers=nw,
                                                  pin_memory=True,
                                                  drop_last=False,
-                                                 persistent_workers=True
+                                                 persistent_workers=nw > 0
                                                  )
 
     # 指定后端设备CUDA&CPU
@@ -72,7 +92,7 @@ if __name__ == '__main__':
 
     # 加载预训练模型参数
     if load_param == True:
-        model.load_state_dict(torch.load(premodel_path, map_location=device), strict = False)
+        load_compatible_pretrained_weights(model, premodel_path, device)
         print("Load finefune model param: %s" % premodel_path)
     else:
         print("Initialize weights: model/backbone/backbone.pth")
@@ -88,6 +108,10 @@ if __name__ == '__main__':
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer,
                                                milestones=cfg["steps"],
                                                gamma=0.1)
+
+    best_ap50_95 = float("-inf")
+    best_epoch = None
+    os.makedirs("weights", exist_ok=True)
 
     print('Starting training for %g epochs...' % cfg["epochs"])
 
@@ -132,16 +156,28 @@ if __name__ == '__main__':
 
         # 模型保存
         if epoch % 10 == 0 and epoch > 0:
-            model.eval()
-            #模型评估
-            print("computer mAP...")
-            _, _, AP, _ = utils.utils.evaluation(val_dataloader, cfg, model, device)
-            print("computer PR...")
-            precision, recall, _, f1 = utils.utils.evaluation(val_dataloader, cfg, model, device, 0.3)
-            print("Precision:%f Recall:%f AP:%f F1:%f"%(precision, recall, AP, f1))
+            metrics = evaluate_coco(
+                val_dataloader, cfg, model, device, cfg["val_annotations"]
+            )
+            print(
+                "Valid COCO AP50-95:%f AP50:%f AP75:%f Detections:%d" % (
+                    metrics["ap50_95"], metrics["ap50"], metrics["ap75"],
+                    metrics["detections"],
+                )
+            )
 
-            torch.save(model.state_dict(), "weights/%s-%d-epoch-%fap-model.pth" %
-                      (cfg["model_name"], epoch, AP))
+            checkpoint_path = "weights/%s-%d-epoch-%fap50_95-model.pth" % (
+                cfg["model_name"], epoch, metrics["ap50_95"]
+            )
+            torch.save(model.state_dict(), checkpoint_path)
+            if metrics["ap50_95"] > best_ap50_95:
+                best_ap50_95 = metrics["ap50_95"]
+                best_epoch = epoch
+                torch.save(model.state_dict(), "weights/best.pt")
+                print("Updated weights/best.pt with valid AP50-95:%f" % best_ap50_95)
 
         # 学习率调整
         scheduler.step()
+
+    print("Training summary: best valid AP50-95:%f at epoch:%d, checkpoint:weights/best.pt" %
+          (best_ap50_95, best_epoch))
